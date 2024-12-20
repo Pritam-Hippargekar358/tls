@@ -1,0 +1,178 @@
+https://innovationforge.in/2024/06/19/Enhancing-Secure-Communication-in-Enterprise-Applications-with-Mutual-TLS-(mTLS)-Using-Spring-Boot.html
+
+
+-genkeypair  —  Generates a key pair
+-alias <alias>  —  Alias name of the entry to process
+-keyalg <alg>  —  Key algorithm name
+-keysize <size>  —  Key bit size
+-validity <days>  —  Validity number of days
+-dname <dname>  —  Distinguished name, 
+CN is CommonName of a person
+OU is OrganizationUnit
+O is OrganizationName
+L is LocalityName
+S is StateName
+C is CountryName
+-keypass <arg>  —  Key Password
+-keystore <keystore> Keystore name
+-storeType <type>  —  Keystore type
+-storepass <arg>  —  Keystore password
+
+
+Generating Server Certificates
+# Generate server certificate and keystore
+keytool -genkeypair -alias server -keyalg RSA -keysize 4096 -validity 365 -dname "CN=Server,OU=Server,O=InnovationForge,L=Arnhem,S=GLD,C=NL" -keypass changeit -keystore server.p12 -storeType PKCS12 -storepass changeit
+
+# Export the server public key
+keytool -exportcert -alias server -file server.cer -keystore server.p12 -storepass changeit
+
+# Import client's public key into server's truststore
+keytool -importcert -keystore server-truststore.p12 -alias client-public -file client.cer -storepass changeit -noprompt
+
+
+
+
+# Generate client certificate and keystore
+keytool -genkeypair -alias client -keyalg RSA -keysize 4096 -validity 365 -dname "CN=Client,OU=Client,O=Examples,L=CA,S=CA,C=US" -keypass changeit -keystore client.p12 -storeType PKCS12 -storepass changeit
+
+# Export the client public key
+keytool -exportcert -alias client -file client.cer -keystore client.p12 -storepass changeit
+
+# Import server's public key into client's truststore
+keytool -importcert -keystore client-truststore.p12 -alias server-public -file server.cer -storepass changeit -noprompt
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+PKCS#12 is a format for storing private keys and certificates in a single file .
+A typical use is to bundle a private key and its X.509 certificate
+
+
+JKS is a representation of a store for cryptographic keys and certificates
+JKS can be used for both a keystore and a truststore.
+
+The .crt extension is the standard extension for certificate files and is commonly used in Unix-style operating systems like GNU/Linux.
+Microsoft Windows follows a different convention and uses the .cer extension for certificate files instead.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+keytool -v -genkeypair
+-dname "CN=Refactorizando,OU=Madrid,O=Refactorizando,C=SP"
+-keystore identity.jks
+-storepass secret
+-keypass secret
+-keyalg RSA
+-keysize 2048
+-alias server
+-validity 3650
+-deststoretype pkcs12
+-ext KeyUsage=digitalSignature,dataEncipherment,keyEncipherment,keyAgreement
+-ext ExtendedKeyUsage=serverAuth,clientAuth -ext SubjectAlternativeName:c=DNS:localhost,IP:127.0.0.1
+
+keytool -v -exportcert -file server.cer -alias server -keystore identity.jks -storepass secret -rfc
+keytool -v -importcert -file server.cer -alias server -keystore truststore.jks -storepass secret -noprompt
+
+server:
+  port: 8432
+  ssl:
+    enabled: true
+    client-auth: need
+    key-store: classpath:identity.jks
+    key-store-password: secret
+    key-alias: client
+    key-store-type: JKS
+    key-store-provider: SUN
+    trust-store: classpath:truststore.jks
+    trust-store-password: secret
+    trust-store-type: JKS
+
+keytool -v -genkeypair
+-dname "CN=Refactorizando,OU=Madrid,O=Refactorizando,C=SP"
+-keystore identity.jks
+-storepass secret
+-keypass secret
+-keyalg RSA
+-keysize 2048
+-alias client
+-validity 3650
+-deststoretype pkcs12
+-ext KeyUsage=digitalSignature,dataEncipherment,keyEncipherment,keyAgreement
+-ext ExtendedKeyUsage=serverAuth,clientAuth -ext SubjectAlternativeName:c=DNS:localhost,IP:127.0.0.1
+
+keytool -v -exportcert -file client.cer -alias client -keystore identity.jks -storepass secret -rfc
+keytool -v -importcert -file client.cer -alias client -keystore truststore.jks -storepass secret -noprompt
+
+server:
+  port: 8431
+  ssl:
+    enabled: true
+    client-auth: need
+    key-store: classpath:identity.jks
+    key-store-password: secret
+    key-alias: client
+    key-store-type: JKS
+    key-store-provider: SUN
+    trust-store: classpath:truststore.jks
+    trust-store-password: secret
+    trust-store-type: JKS
+
+
+

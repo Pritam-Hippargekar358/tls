@@ -1,0 +1,26 @@
+[ req ]
+default_md             = sha256
+default_bits           = 2048
+distinguished_name     = req_distinguished_name
+req_extensions         = req_ext
+prompt = no
+
+[ req_distinguished_name ]
+countryName = IN
+stateOrProvinceName = MH
+localityName = Pune
+organizationName = Server  
+organizationalUnitName = IT
+commonName = tech.server.com
+emailAddress = tech.server@gmail.com
+
+[ req_ext ]
+subjectAltName = @alt_names
+extendedKeyUsage = serverAuth
+
+[alt_names]
+DNS.1   = localhost
+DNS.2   = tech.server.com
+IP      = 127.0.0.1
+
+
