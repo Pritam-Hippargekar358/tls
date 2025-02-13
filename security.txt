@@ -1,0 +1,589 @@
+https://medium.com/@marcelogdomingues/mastering-spring-security-roles-and-privileges-1b32de1593e9
+https://sjh9708.tistory.com/170
+https://sjh9708.tistory.com/85
+https://sjh9708.tistory.com/168
+public class CustomUserDetails implements UserDetails {
+    private String username;
+    private String password;
+    private List<GrantedAuthority> authorities;
+
+    public CustomUserDetails(User user) {
+        this.username = user.getUsername();
+        this.password = user.getPassword();
+        this.authorities = user.getRoles().stream()
+                .map(role -> new SimpleGrantedAuthority(role.getName()))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return authorities;
+    }
+
+    @Override
+    public String getPassword() {
+        return password;
+    }
+
+    @Override
+    public String getUsername() {
+        return username;
+    }
+
+    @Override
+    public boolean isAccountNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() {
+        return true;
+    }
+
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return true;
+    }
+}
+
+User Entity:
+
+package com.medium.model;
+
+import javax.persistence.*;
+import java.util.Collection;
+
+@Entity
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String username;
+    private String password;
+
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+        name = "users_roles",
+        joinColumns = @JoinColumn(name = "user_id"),
+        inverseJoinColumns = @JoinColumn(name = "role_id")
+    )
+    private Collection<Role> roles;
+
+    // Getters and setters
+}
+Role Entity:
+
+package com.medium.model;
+
+import javax.persistence.*;
+import java.util.Collection;
+
+@Entity
+public class Role {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String name;
+
+    @ManyToMany(mappedBy = "roles")
+    private Collection<User> users;
+
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+        name = "roles_privileges",
+        joinColumns = @JoinColumn(name = "role_id"),
+        inverseJoinColumns = @JoinColumn(name = "privilege_id")
+    )
+    private Collection<Privilege> privileges;
+
+    // Getters and setters
+}
+Privilege Entity:
+
+package com.medium.model;
+
+import javax.persistence.*;
+import java.util.Collection;
+
+@Entity
+public class Privilege {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String name;
+
+    @ManyToMany(mappedBy = "privileges")
+    private Collection<Role> roles;
+
+    // Getters and setters
+}
+
+
+@Service
+public class InitDbService {
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private RoleRepository roleRepository;
+
+    @Autowired
+    private PrivilegeRepository privilegeRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    @PostConstruct
+    public void init() {
+        Privilege readPrivilege = new Privilege();
+        readPrivilege.setName("READ_PRIVILEGE");
+        Privilege writePrivilege = new Privilege();
+        writePrivilege.setName("WRITE_PRIVILEGE");
+        privilegeRepository.saveAll(Arrays.asList(readPrivilege, writePrivilege));
+
+        Role adminRole = new Role();
+        adminRole.setName("ROLE_ADMIN");
+        adminRole.setPrivileges(Arrays.asList(readPrivilege, writePrivilege));
+        roleRepository.save(adminRole);
+
+        Role userRole = new Role();
+        userRole.setName("ROLE_USER");
+        userRole.setPrivileges(Arrays.asList(readPrivilege));
+        roleRepository.save(userRole);
+
+        User admin = new User();
+        admin.setUsername("admin");
+        admin.setPassword(passwordEncoder.encode("admin123"));
+        admin.setRoles(Arrays.asList(adminRole));
+        userRepository.save(admin);
+
+        User user = new User();
+        user.setUsername("user");
+        user.setPassword(passwordEncoder.encode("user123"));
+        user.setRoles(Arrays.asList(userRole));
+        userRepository.save(user);
+    }
+}
+
+@Configuration
+@EnableGlobalMethodSecurity(prePostEnabled = true)
+public class MethodSecurityConfig {
+}
+@Service
+public class SecureService {
+
+    @PreAuthorize("hasRole('ADMIN')")
+    public void adminOnlyMethod() {
+        System.out.println("Admin only method");
+    }
+
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public void userAndAdminMethod() {
+        System.out.println("User and Admin method");
+    }
+}
+
+
+Types of Route Guards
+CanActivate: Prevents access to a route unless a condition is met (e.g., the user is authenticated).
+CanDeactivate: Allows you to prevent the user from navigating away from a route if a condition isn’t met (e.g., unsaved changes).
+CanLoad: Prevents lazy-loaded modules from loading if a condition isn’t met.
+
+public class Address {
+    private String apartment;
+    private String street;
+    private String pinCode;
+}
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class Person {
+    @JsonProperty("name")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String name;
+
+    @JsonProperty("age")
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    private int age;
+
+    @JsonProperty("address")
+    private List<Address> address;
+}
+public static void main(String[] args) {
+	String jsonArray = "[{\"name\":\"John\", \"age\":30, \"address\":[{\"apartment\":\"A1\",\"street\":\"Main St\",\"pinCode\":\"12345\"}], \"unknownField\":\"value\"}, {\"name\":\"Alice\", \"age\":25, \"address\":[{\"apartment\":\"B2\",\"street\":\"Second St\",\"pinCode\":\"67890\"}]}]";
+
+	try {
+		ObjectMapper objectMapper = new ObjectMapper();
+		List<Person> personList = objectMapper.readValue(jsonArray, new TypeReference<List<Person>>() {});
+
+		for (Person person : personList) {
+			System.out.println("Name: " + person.getName() + ", Age: " + person.getAge());
+			for (Address address : person.getAddress()) {
+				System.out.println("  Apartment: " + address.getApartment() + ", Street: " + address.getStreet() + ", PinCode: " + address.getPinCode());
+			}
+		}
+	} catch (Exception e) {
+		e.printStackTrace();
+	}
+}	
+
+
+@JsonBackReference is part of the Jackson library’s managed references feature and is commonly used in bidirectional relationships. In these relationships, @JsonBackReference works in tandem with @JsonManagedReference:
+
+Purpose: To handle parent-child relationships without causing infinite recursion during JSON serialization.
+Usage: Apply @JsonManagedReference on the parent field and @JsonBackReference on the child field.
+
+@Entity
+public class User {
+    @Id
+    private Long id;
+
+    @JsonManagedReference
+    @OneToMany(mappedBy = "user")
+    private List<Order> orders;
+}
+
+@Entity
+public class Order {
+    @Id
+    private Long id;
+
+    @JsonBackReference
+    @ManyToOne
+    @JoinColumn(name = "user_id")
+    private User user;
+}
+This setup prevents infinite recursion when serializing a User object with associated Order objects.
+
+@JsonIgnore
+@JsonIgnore is a straightforward annotation that tells Jackson to completely ignore a field during both serialization and deserialization. It’s helpful for fields that should not be included in the JSON output or input, regardless of any relationships.
+
+@JsonBackReference expects a paired @JsonManagedReference to manage circular dependencies, allowing the reference to exist during deserialization while ignoring it during serialization.
+@JsonIgnore completely removes the field from both serialization and deserialization.
+
+
+Bidirectional Relationships with Parent-Child References:
+Use @JsonBackReference and @JsonManagedReference together.
+Avoid using @JsonIgnore here, as @JsonBackReference already provides the desired behavior for JSON handling.
+
+2. Unidirectional Relationships or Simpler Models:
+If you don’t need bidirectional navigation in JSON, @JsonIgnore alone is simpler and eliminates the field from both serialization and deserialization.
+This is often sufficient for many cases and avoids potential confusion.
+
+
+
+Be Mindful of Exception Types: By default, Spring only rolls back transactions on unchecked exceptions (subclasses of RuntimeException). If you want to roll back on checked exceptions, explicitly configure the rollbackFor attribute of @Transactional.
+@Transactional(rollbackFor = {Exception.class})
+public void someMethod() {
+    // Code that may throw a checked exception
+}
+2.Handle Exceptions Thoughtfully: Consider how exceptions are handled within your service methods. If you need to propagate the original exception, you may need to rethink how you’re using @Transactional.
+
+3.Test for Transaction Rollback: Ensure your unit and integration tests cover scenarios where transactions are rolled back. This will help you catch unexpected behaviors early in development.
+
+4.Avoid Overusing @Transactional: Not every service method needs to be transactional. Use it judiciously, especially when dealing with simple read operations or when exceptions need to be communicated clearly.
+
+Implicit Rollback:
+..............................
+If an unchecked exception is thrown during the execution of a transactional method, Spring automatically marks the transaction for rollback.
+Spring uses a proxy mechanism to intercept method calls and manage transactional behavior.
+
+Checked Exceptions and Rollback:
+..............................
+Checked exceptions (those not extending RuntimeException) do not trigger automatic rollback by default.
+If you want to include checked exceptions in the rollback policy, you can use the @Transactional(rollbackFor = Exception.class) 
+@Transactional(noRollbackFor = SpecificException.class) 
+ @Transactional(rollbackFor = {
+        CustomException.class
+    }, transactionManager = "customTransactionManager")
+annotation on the method or specify the exceptions that should trigger a rollback.
+
+Programmatic Rollback:
+..............................
+In some cases, you may need to programmatically trigger a rollback based on certain conditions.
+You can use the TransactionAspectSupport.currentTransactionStatus().setRollbackOnly() method to mark the current transaction for rollback.
+
+@Transactional annotation attributes, such as rollbackFor and noRollbackFor, to specify the exception types that should trigger or prevent a rollback.
+
+Consider a scenario where you apply @Transactional to a service method:
+
+@Service
+public class CodeDetailService {
+
+    @Transactional
+    public ResponseEntityDTO deleteCodeDetail(Long id) {
+        ResponseEntityDTO response = new ResponseEntityDTO();
+        try {
+            codeDetailRepository.deleteById(id);
+            response.setMessage("Deleted Successfully");
+            response.setStatus("SUCCESS");
+        } catch (Exception e) {
+            response.setStatus("ERROR");
+            response.setMessage("Error occurred: " + e.getMessage());
+        }
+        return response;
+    }
+}
+In this example, the method is transactional. If an exception occurs (e.g., a DataIntegrityViolationException due to a foreign key constraint), the transaction will be marked for rollback. However, what happens next might not be what you expect.
+
+If an exception occurs and the transaction is rolled back, Spring will silently suppress the original exception and instead throw an UnexpectedRollbackException. This can cause the actual exception message to be lost, leading to confusion when trying to debug or inform the user.
+
+This behavior is designed to prevent partial commits and ensure data integrity, but it can also lead to situations where the original exception is lost, making it difficult to provide meaningful error messages to users or debug issues effectively.
+
+
+
+  @Entity
+   public class User {
+   @Id
+   @GeneratedValue(strategy = GenerationType.IDENTITY)
+   private Long id;
+   private String username;
+   private String password;
+
+   @ManyToMany(fetch = FetchType.EAGER)
+   @JoinTable(
+   name = "user_roles",
+   joinColumns = @JoinColumn(name = "user_id"),
+   inverseJoinColumns = @JoinColumn(name = "role_id")
+   )
+   private Set<Role> roles;
+
+// Getters and setters
+}
+Role.java:
+import javax.persistence.*;
+import java.util.Set;
+
+@Entity
+public class Role {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String name;
+
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+            name = "role_permissions",
+            joinColumns = @JoinColumn(name = "role_id"),
+            inverseJoinColumns = @JoinColumn(name = "permission_id")
+    )
+    private Set<Permission> permissions;
+
+    // Getters and setters
+}
+Permission.java:
+import javax.persistence.*;
+
+@Entity
+public class Permission {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String name;
+
+    // Getters and setters
+}
+
+@Component
+public class DataLoader implements CommandLineRunner {
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private RoleRepository roleRepository;
+
+    @Autowired
+    private PermissionRepository permissionRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    @Override
+    public void run(String... args) throws Exception {
+        Permission readPermission = new Permission();
+        readPermission.setName("READ_PRIVILEGE");
+        permissionRepository.save(readPermission);
+
+        Permission writePermission = new Permission();
+        writePermission.setName("WRITE_PRIVILEGE");
+        permissionRepository.save(writePermission);
+
+        Role adminRole = new Role();
+        adminRole.setName("ROLE_ADMIN");
+        Set<Permission> adminPermissions = new HashSet<>();
+        adminPermissions.add(readPermission);
+        adminPermissions.add(writePermission);
+        adminRole.setPermissions(adminPermissions);
+        roleRepository.save(adminRole);
+
+        Role userRole = new Role();
+        userRole.setName("ROLE_USER");
+        Set<Permission> userPermissions = new HashSet<>();
+        userPermissions.add(readPermission);
+        userRole.setPermissions(userPermissions);
+        roleRepository.save(userRole);
+
+        User admin = new User();
+        admin.setUsername("admin");
+        admin.setPassword(passwordEncoder.encode("adminpass"));
+        Set<Role> adminRoles = new HashSet<>();
+        adminRoles.add(adminRole);
+        admin.setRoles(adminRoles);
+        userRepository.save(admin);
+
+        User user = new User();
+        user.setUsername("user");
+        user.setPassword(passwordEncoder.encode("userpass"));
+        Set<Role> userRoles = new HashSet<>();
+        userRoles.add(userRole);
+        user.setRoles(userRoles);
+        userRepository.save(user);
+    }
+}
+
+Implement Retry Logic for Optimistic Locking:
+@Service
+public class ProductService {
+
+    @Autowired
+    private ProductRepository productRepository;
+
+    @Transactional
+    public void updateProductPriceWithRetry(Long productId, double newPrice, int maxRetries) {
+        int retries = 0;
+        boolean success = false;
+        
+        while (!success && retries < maxRetries) {
+            try {
+                Product product = productRepository.findById(productId);
+                if (product != null) {
+                    product.setPrice(newPrice);
+                    productRepository.save(product);
+                    success = true;
+                }
+            } catch (OptimisticLockingFailureException e) {
+                // Log the exception or perform any necessary cleanup
+                // Retry the operation
+                retries++;
+            }
+        }
+        
+        if (!success) {
+            throw new RuntimeException("Failed to update product price after " + maxRetries + " retries.");
+        }
+    }
+}
+
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+
+public class CustomClassLoader extends ClassLoader {
+
+    private final String classPath;
+
+    public CustomClassLoader(String classPath, ClassLoader parent) {
+        super(parent);
+        this.classPath = classPath;
+    }
+
+    @Override
+    protected Class<?> findClass(String name) throws ClassNotFoundException {
+        byte[] classBytes = loadClassBytes(name);
+        return defineClass(name, classBytes, 0, classBytes.length);
+    }
+
+    private byte[] loadClassBytes(String className) throws ClassNotFoundException {
+        String fileName = className.replace('.', File.separatorChar) + ".class";
+        try {
+            FileInputStream fis = new FileInputStream(classPath + File.separator + fileName);
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            int b;
+            while ((b = fis.read()) != -1) {
+                bos.write(b);
+            }
+            fis.close();
+            return bos.toByteArray();
+        } catch (IOException e) {
+            throw new ClassNotFoundException("Class '" + className + "' not found.", e);
+        }
+    }
+
+    public static void main(String[] args) {
+        // Define the path to the directory containing the class files
+        String classPath = "/path/to/class/files";
+
+        // Create an instance of the custom class loader
+        CustomClassLoader classLoader = new CustomClassLoader(classPath, ClassLoader.getSystemClassLoader());
+
+        try {
+            // Load the class using the custom class loader
+            Class<?> myClass = classLoader.loadClass("com.example.MyClass");
+
+            // Create an instance of the loaded class
+            Object obj = myClass.newInstance();
+
+            // Invoke methods or access fields of the loaded class
+            // For example:
+            // Method method = myClass.getMethod("methodName");
+            // Object result = method.invoke(obj);
+        } catch (ClassNotFoundException | IllegalAccessException | InstantiationException e) {
+            e.printStackTrace();
+        }
+    }
+}
+Replace “/path/to/class/files” with the path to the directory containing your class files, and “com.example.MyClass” with the fully qualified name of the class you want to load.
+
+
+Java <? super B> contravariant syntax
+It means that the type parameter A can be any type that is a supertype of B or B itself.
+This includes B itself, as well as any class or interface that B extends or implements, and any superclass of B.
+
+However, if an exception is caught within the method and not rethrown, the transaction manager remains unaware of any issues, and as a result, the transaction is not rolled back but rather committed.
+
+Now let’s modify our above code to throw the error so that we can rollback
+
+@Service
+public class AccountService {
+
+  @Autowired private AccountRepository accountRepository;
+
+  @Transactional //@Transactional(rollbackFor = Exception.class)
+  public void transferMoney(Long fromAccountId, Long toAccountId, BigDecimal amount) {
+    try {
+      // ... fetch accounts
+
+      fromAccount.setBalance(fromAccount.getBalance().subtract(amount));
+      accountRepository.save(fromAccount);
+
+      // Simulate an error in updating the recipient's account
+      if (toAccount.getId().equals((long) -1)) {
+        throw new Exception("Error in processing recipient account");
+      }
+
+      toAccount.setBalance(toAccount.getBalance().add(amount));
+      accountRepository.save(toAccount);
+    } catch (Exception e) {
+      log.error("Error occurred while transferring money ...");
+      throw e;
+    }
+  }
+}
+
+
+
+public static void main(String[] args) throws Exception {
+	// Getting the Class object
+	Class<?> clazz = Class.forName("java.util.ArrayList");
+	// Creating an instance using newInstance()
+	List<String> list = (List<String>) clazz.getDeclaredConstructor().newInstance();
+	list.add("Java Reflection");
+	System.out.println(list);
+}

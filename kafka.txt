@@ -1,0 +1,594 @@
+run zookeeper :
+start zookeeper-server-start.bat ..\..\config\zookeeper.properties
+
+start command :
+start kafka-server-start.bat ..\..\config\server.properties
+
+create topic. This is where you store the data
+kafka-topics.bat - -create - - topic order-topic - -bootstrap-server localhost:9092
+
+bin/kafka-topics.sh --list 
+--bootstrap-server localhost:9092
+
+push data through :
+kafka-console-producer.bat --topic order-topic --bootstrap-server localhost:9092
+
+consume data through :
+kafka-console-consumer.bat --topic order-topic --from-beginning --bootstrap-server localhost:9092  
+
+
+In fact Spring automatically adds this header by default to outbound events, unless it is configured not to with the following configuration in the ProducerFactory (more on the ProducerFactory below):
+config.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, false);
+
+If the type info header is present then the consumer will use this by default. It can be configured to ignore the type header if present, and rely on the default type instead, with this configuration in the ConsumerFactory:
+config.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
+  
+  <dependency>
+   <groupId>org.springframework.kafka</groupId>
+   <artifactId>spring-kafka</artifactId>
+  </dependency>
+
+  <dependency>
+   <groupId>org.springframework.kafka</groupId>
+   <artifactId>spring-kafka-test</artifactId>
+   <scope>test</scope>
+  </dependency>
+
+
+https://prateek-ashtikar512.medium.com/kafka-dead-letter-topic-e846d0e9bb23	
+	   @Bean
+   public ObjectMapper objectMapper() {
+      var objectMapper = new ObjectMapper();
+      objectMapper.findAndRegisterModules();
+      objectMapper.configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
+      
+      return objectMapper;
+   }
+
+}
+# kafka producer
+kafka.url=localhost:9092
+spring.kafka.bootstrap-servers=${kafka-service:localhost}:9092
+spring.kafka.producer.key-serializer=org.apache.kafka.common.serialization.StringSerializer
+spring.kafka.producer.value-serializer=org.springframework.kafka.support.serializer.JsonSerializer
+spring.kafka.producer.bootstrap-servers=localhost:9092
+spring.kafka.producer.properties.spring.json.add.type.headers=false
+  
+@Value("${kafka.url}")
+private String kafkaURL;
+@Bean
+public KafkaTemplate<String, Object> kafkaTemplate() {
+    return new KafkaTemplate<>(producerFactory());
+}
+
+//public ProducerFactory<String, Serializable> producerFactory() {}
+//KafkaTemplate<String, Serializable> jsonKafkaTemplate(ProducerFactory<String, Serializable> jsonProducerFactory) {}
+@Bean
+public <K, V> ProducerFactory<K, V> producerFactory() {
+    Map<String, Object> configProps = new HashMap<>();
+    configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaURL);
+    configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+    configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
+    configProps.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, false);
+    return new DefaultKafkaProducerFactory<>(configProps);
+}  
+
+    @Bean
+    public <K, V> KafkaTemplate<K, V> employeeKafkaTemplate() {
+        return new KafkaTemplate<>(producerFactory());
+    }
+
+ProducerRecord<String, String> producerRecord 
+    = new ProducerRecord<>("users", "key", "value");
+Future<RecordMetadata> output = kafkaProducer
+    .send(producerRecord);
+
+
+	
+private final KafkaTemplate<String, Object> kafkaTemplate;
+public void publishMessage(DTO dto) {
+	kafkaTemplate.send(Constants.TOPIC_NAME, dto);
+	// SendResult<String, DTO> sendResult = createOrderKafkaTemplate.send(Constants.TOPIC_NAME, dto).get();// log.info(sendResult.toString());
+}
+
+
+spring.kafka.bootstrap-servers=${kafka-service:localhost}:9092
+spring.kafka.consumer.group-id=kafka-group-id
+spring.kafka.consumer.auto-offset-reset=earliest
+spring.kafka.consumer.key-deserializer=org.apache.kafka.common.serialization.StringDeserializer
+spring.kafka.consumer.value-deserializer=org.springframework.kafka.support.serializer.JsonDeserializer
+spring.kafka.consumer.properties.spring.json.add.type.headers=false
+spring.kafka.consumer.properties.spring.json.trusted.packages=*
+spring.kafka.listener.ack-mode=manual_immediate
+
+@Bean
+public ConsumerFactory<String, EmailRequestDto> consumerFactory() {
+    Map<String, Object> config = new HashMap<>();
+
+    config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaURL);
+    config.put(ConsumerConfig.GROUP_ID_CONFIG, ApplicationConstants.GROUP_NAME);
+    config.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+    config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
+    config.put(JsonDeserializer.TRUSTED_PACKAGES, "*");
+	config.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+
+    return new DefaultKafkaConsumerFactory<>(config
+            , new StringDeserializer()
+            , new JsonDeserializer<>(EmailRequestDto.class));
+}
+
+@Bean
+public ConcurrentKafkaListenerContainerFactory<String, Dto> kafkaListenerContainerFactory() {
+    ConcurrentKafkaListenerContainerFactory<String, Dto> factory =
+            new ConcurrentKafkaListenerContainerFactory<>();
+    factory.setConsumerFactory(consumerFactory());
+	factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+    return factory;
+}
+
+@KafkaListener(topics = {ApplicationConstants.TOPIC_NAME,}, containerFactory = "kafkaListenerContainerFactory", groupId = ApplicationConstants.GROUP_NAME)
+public void consumeEmailMessage(Dto dto) {     
+        log.info(" data consumed" + dto);
+}
+
+
+OR 
+@KafkaListener(topics = "order-topic", groupId = "group-id-1", properties = {"spring.json.value.default.type=com.example.consumer.model.Order"})
+public void consume3(@Payload Order order, Acknowledgment acknowledgment, @Header(KafkaHeaders.RECEIVED_PARTITION_ID) int partition) {
+	System.out.println(String.format("Consumer 3: %s, Partition: %s", order.getOrderId(), partition));
+	acknowledgment.acknowledge();
+}
+
+
+@Component
+@Slf4j
+public class KafkaProducer {
+
+    private final KafkaTemplate<String, Object> kafkaTemplate;
+
+    public KafkaProducer(KafkaTemplate<String, Object> kafkaTemplate) {
+        this.kafkaTemplate = kafkaTemplate;
+    }
+
+    public void sendTodoToKafka(Todo todo) {
+
+        ListenableFuture<SendResult<String, Object>> listenableFuture = kafkaTemplate.send("todo-topic", String.valueOf(todo.getId()), todo);
+        listenableFuture.addCallback(new ListenableFutureCallback<SendResult<String, Object>>() {
+
+            @Override
+            public void onSuccess(SendResult<String, Object> result) {
+                handleSuccess(todo.getId(), todo, result);
+            }
+
+            @Override
+            public void onFailure(Throwable ex) {
+                handleFailure(todo.getId(), todo, ex);
+            }
+
+        });
+    }
+
+    private void handleSuccess(Integer key, Todo value, SendResult<String, Object> result) {
+        log.info("Success: Message sent success for the key: {} and the value is {} partition is {}"
+                , key, value, result.getRecordMetadata().partition());
+
+    }
+
+    private void handleFailure(Integer key, Todo value, Throwable ex) {
+        log.info("Error sending the message: exception is {}", ex.getMessage());
+    }
+
+}
+
+
+    public ConsumerFactory<String, ProductMessage> consumerFactory() {
+        Map<String, Object> config = new HashMap<>();
+        config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapAddress);
+        config.put(ConsumerConfig.GROUP_ID_CONFIG, "consuming");
+
+        DefaultJackson2JavaTypeMapper typeMapper = new DefaultJackson2JavaTypeMapper();
+        Map<String, Class<?>> classMap = new HashMap<>();
+        typeMapper.setIdClassMapping(classMap);
+        typeMapper.addTrustedPackages("*");
+
+        JsonDeserializer<ProductMessage> jsonDeserializer = new JsonDeserializer<>(ProductMessage.class);
+        jsonDeserializer.setTypeMapper(typeMapper);
+        jsonDeserializer.setUseTypeMapperForKey(true);
+
+        return new DefaultKafkaConsumerFactory<>(config, new StringDeserializer(), jsonDeserializer);
+    }
+	
+	
+By default, when you create a user in Linux with useradd and do not specify a group, the system creates a group with the same name as the user	
+The kafka user is often used as the owner of the Kafka service (to control access to Kafka files, logs, and configuration).	
+sudo useradd -r -d /opt/kafka -s /usr/sbin/nologin -g kafka kafka
+System User (-r): This creates a system user, typically used for running background services, and it’s not intended to have regular user access or root privileges.
+No Sudo Privileges: By default, this user has no sudo (root) privileges, which means it cannot execute commands as root unless explicitly granted.
+
+
+sudo visudo
+.......................
+kafka ALL=(ALL) NOPASSWD: ALL
+
+
+Create Kafka User
+.........................................	
+sudo useradd -m -s /bin/bash kafka
+sudo passwd kafka
+
+Switch to the Kafka user:
+sudo su - kafka	
+
+.......................................................................................
+//This is useful for service accounts that don’t require direct user interaction but still need to run background processes (like Kafka).
+sudo useradd -r -d /opt/kafka -s /usr/sbin/nologin kafka
+id kafka
+
+wget https://downloads.apache.org/kafka/3.8.1/kafka_2.12-3.8.1.tgz
+##tar -xvzf ~/Downloads/kafka_2.12-3.8.1.tgz --strip 1
+tar -xvzf ~/Downloads/kafka_2.12-3.8.1.tgz
+##mkdir ~/kafka && cd ~/kafka
+sudo mv kafka_2.12-3.8.1.tgz /opt/kafka
+sudo chown -R kafka:kafka /opt/kafka
+
+
+sudo -u kafka mkdir -p /opt/kafka/logs
+sudo -u kafka vim /opt/kafka/config/server.properties
+# logs configuration for Apache Kafka
+log.dirs=/opt/kafka/logs
+listeners=PLAINTEXT://localhost:9092
+delete.topic.enable = true
+
+
+Note: Internal would be the private and External would be the public IP Address of the VM
+https://rmoff.net/2018/08/02/kafka-listeners-explained/
+listeners=INTERNAL://0.0.0.0:19092,EXTERNAL://0.0.0.0:9092
+listener.security.protocol.map=INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+advertised.listeners=INTERNAL://10.0.0.4:19092,EXTERNAL://20.201.63.123:9092
+inter.broker.listener.name=INTERNAL
+
+
+
+
+sudo -u kafka mkdir -p /opt/kafka/zoo-logs
+sudo -u kafka vim /opt/kafka/config/zookeeper.properties
+dataDir=/opt/kafka/zoo-logs
+
+
+sudo vim /etc/systemd/system/zookeeper.service
+...................................................................................
+[Unit]
+Description=Apache Zookeeper server
+Documentation=http://zookeeper.apache.org
+Requires=network.target remote-fs.target
+After=network.target remote-fs.target
+
+[Service]
+Type=simple
+User=kafka
+Group=kafka
+ExecStart=/opt/kafka/bin/zookeeper-server-start.sh /opt/kafka/config/zookeeper.properties
+ExecStop=/opt/kafka/bin/zookeeper-server-stop.sh
+Restart=on-abnormal
+
+[Install]
+WantedBy=multi-user.target
+
+
+sudo vim /etc/systemd/system/kafka.service
+...................................................................................
+[Unit]
+Description=Apache Kafka Server
+Documentation=http://kafka.apache.org/documentation.html
+Requires=zookeeper.service
+After=zookeeper.service
+
+[Service]
+Type=simple
+User=kafka
+Group=kafka
+ExecStart=/bin/sh -c '/opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties > /opt/kafka/logs/start-kafka.log 2>&1'
+ExecStop=/opt/kafka/bin/kafka-server-stop.sh
+Restart=on-abnormal
+
+[Install]
+WantedBy=multi-user.target
+
+Now reload the systemd manager
+sudo systemctl daemon-reload
+
+sudo systemctl enable --now zookeeper
+sudo systemctl start zookeeper
+
+sudo systemctl enable --now kafka
+sudo systemctl start kafka
+
+sudo systemctl status zookeeper
+sudo systemctl status kafka
+
+tail -f /opt/kafka/logs/server.log
+
+mv /opt/kafka/logs/meta.properties /opt/kafka/logs/meta.properties.bak
+
+
+# Start Zookeeper
+sudo -u kafka /opt/kafka/bin/zookeeper-server-start.sh /opt/kafka/config/zookeeper.properties
+
+# Start Kafka Server
+sudo -u kafka /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties
+
+# Create a Topic
+sudo -u kafka /opt/kafka/bin/kafka-topics.sh \
+--create --bootstrap-server localhost:9092 --replication-factor 1 --partitions 1 --topic TestTopic
+
+sudo -u kafka /opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:9092
+
+# Start Producer
+sudo -u kafka /opt/kafka/bin/kafka-console-producer.sh --broker-list localhost:9092 --topic TestTopic
+
+# Start Consumer
+always from start
+sudo -u kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic TestTopic --from-beginning
+
+from last consumed data
+sudo -u kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic TestTopic --group my-consumer-group
+
+//https://www.howtoforge.com/tutorial/ubuntu-apache-kafka-installation/
+sudo -u kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --delete --topic TestTopic
+
+# Describe a specific topic
+sudo -u kafka /opt/kafka/bin/kafka-topics.sh --describe --topic TestTopic --bootstrap-server localhost:9092
+
+https://www.howtoforge.com/tutorial/ubuntu-apache-kafka-installation/
+
+Create a file named kafkastart.sh and copy the below script:
+.........................................................................
+#!/bin/bash
+sudo nohup /opt/kafka/bin/zookeeper-server-start.sh -daemon /opt/kafka/config/zookeeper.properties > /dev/null 2>&1 &
+sleep 5
+sudo nohup /opt/kafka/bin/kafka-server-start.sh -daemon /opt/kafka/config/server.properties > /dev/null 2>&1 &
+After give the executable permissions to the file:
+
+sudo chmod +x kafkastart.sh
+
+
+
+docker cp 09306a928672:/var/lib/postgresql/data/pg_hba.conf ~/spring-ayushma/docker-setup/migrations/
+docker cp 09306a928672:/var/lib/postgresql/data/postgresql.conf ~/spring-ayushma/docker-setup/migrations/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Spring Boot provides default cache managers based on the dependencies on the classpath, such as ConcurrentMapCacheManager or EhCacheCacheManager. We can also customize the cache manager to use other providers like Redis or Hazelcast.
+
+For example, if "JCache" is present on the classpath. The spring-boot-starter-cache provides the JCacheCacheManager.
+
+Similarly, the RedisCacheManager is automatically configured when we configure Redis. The default configuration is set by using property spring.cache.redis.*.
+
+If no matching dependency is found in the classpath, it creates an in-memory cache (ConcurrentMapCacheManager) using one concurrent HashMap.
+
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-cache</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.ehcache</groupId>
+    <artifactId>ehcache</artifactId>
+</dependency>
+@SpringBootApplication
+public class Application {
+    public static void main(String[] args) {
+        SpringApplication.run(Application.class, args);
+    }
+}
+@Configuration
+@EnableCaching  // Enable caching for your application
+public class CacheConfig {
+
+    @Bean
+    public CacheManager cacheManager() {
+        return new ConcurrentMapCacheManager("users", "products");
+    }
+}
+@Configuration
+@EnableJpaAuditing // Enable auditing for your application
+public class AuditingConfig {
+
+}
+@Cacheable(value = "user", key = "#username", sync = true)
+@Service
+public class UserService {
+
+    @Cacheable(value = "users", key = "#userId")
+    public User getUserById(Long userId) {
+        // Simulate a database call or expensive operation
+        return userRepository.findById(userId).orElseThrow(() -> new UserNotFoundException(userId));
+    }
+}
+@CacheEvict(value = "users", key = "#userId")
+public void updateUser(Long userId, User user) {
+    // Update user in the database
+    userRepository.save(user);
+}
+
+Time-to-Live (TTL): TTL specifies the duration for which a cache entry is valid. Once the TTL has elapsed, the cache entry is considered expired and is removed from the cache.
+
+Time-to-Idle (TTI): TTI defines the maximum time an entry can stay idle in the cache before it expires. This strategy is useful for ensuring only actively accessed data remains in the cache.
+
+Least Recently Used (LRU): LRU is an eviction policy that removes the least recently accessed data when the cache reaches its maximum size. This is beneficial for retaining frequently accessed data.
+
+Custom Eviction Policies: Custom eviction policies can be implemented to handle specific use cases. These policies can be based on complex logic unique to your application's requirements.
+
+@Configuration
+@EnableCaching
+public class CacheConfig {
+  
+  @Bean
+  public CaffeineCacheManager cacheManager() {
+    CaffeineCacheManager cacheManager = new CaffeineCacheManager();
+	//Time-to-Idle (TTI)
+	//cacheManager.setCaffeine(Caffeine.newBuilder().expireAfterAccess(5, TimeUnit.MINUTES));
+	//Time-to-Live (TTL)
+    cacheManager.setCaffeine(Caffeine.newBuilder().maximumSize(100).expireAfterWrite(10, TimeUnit.MINUTES));
+    return cacheManager;
+  }
+}
+
+@RestController
+public class ResourceController {
+  
+  @GetMapping("/resource")
+  public ResponseEntity<String> getResource() {
+    HttpHeaders headers = new HttpHeaders();
+    headers.setCacheControl(CacheControl.maxAge(30, TimeUnit.MINUTES).cachePublic());
+    headers.setETag("\"12345\"");
+    headers.setLastModified(Instant.now());
+    return new ResponseEntity<>("Resource Content", headers, HttpStatus.OK);
+  }
+}
+
+<dependencies>
+    <!-- Spring Cache Dependency -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-cache</artifactId>
+    </dependency>
+    <!-- Caffeine Cache Dependency -->
+    <dependency>
+        <groupId>com.github.ben-manes.caffeine</groupId>
+        <artifactId>caffeine</artifactId>
+    </dependency>
+    <!-- Ehcache Dependency -->
+    <dependency>
+        <groupId>org.ehcache</groupId>
+        <artifactId>ehcache</artifactId>
+    </dependency>
+</dependencies>
+
+@Configuration
+@EnableCaching
+public class CacheConfig {
+
+    @Bean
+    public ConcurrentMapCacheManager cacheManager() {
+        ConcurrentMapCacheManager cacheManager = new ConcurrentMapCacheManager();
+        cacheManager.setCacheNames(List.of("users", "products"));
+        cacheManager.setCacheDefaults(defaultCacheConfig());
+        return cacheManager;
+    }
+
+    @Bean
+    public Caffeine<Object, Object> defaultCacheConfig() {
+        return Caffeine.newBuilder()
+                       .expireAfterWrite(10, TimeUnit.MINUTES)
+                       .maximumSize(100);
+    }
+}
+
+@Configuration
+@EnableCaching
+public class EhcacheConfig {
+
+    @Bean
+    public CacheManager cacheManager() {
+        CachingProvider provider = Caching.getCachingProvider();
+        javax.cache.CacheManager cacheManager = provider.getCacheManager(
+                getClass().getResource("/ehcache.xml").toURI(),
+                getClass().getClassLoader()
+        );
+        return new JCacheCacheManager(cacheManager);
+    }
+
+    @Bean
+    public Cache<Object, Object> defaultCache() {
+        MutableConfiguration<Object, Object> configuration = new MutableConfiguration<>()
+                .setStatisticsEnabled(true);
+        Cache<Object, Object> cache = cacheManager().getCache("defaultCache", Object.class, Object.class);
+        if (cache == null) {
+            cacheManager().createCache("defaultCache", Eh107Configuration.fromEhcacheCacheConfiguration(configuration));
+        }
+        return cache;
+    }
+}
+ehcache.xml
+Upload an ehcache.xml file to the src/main/resources directory with the following content:
+...................................................................................................
+<config xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance'
+        xmlns='http://www.ehcache.org/v3' 
+        xsi:schemaLocation="http://www.ehcache.org/v3 http://www.ehcache.org/schema/ehcache-core-3.8.xsd">
+    
+    <cache alias="defaultCache">
+        <expiry>
+            <ttl unit="minutes">10</ttl>
+        </expiry>
+        <resources>
+            <heap unit="entries">100</heap>
+        </resources>
+    </cache>
+</config>
+
+
+
+Using Caffeine
+@Bean
+public CacheManager cacheManager() {
+    CaffeineCacheManager cacheManager = new CaffeineCacheManager("products");
+    cacheManager.setCaffeine(Caffeine.newBuilder()
+        .expireAfterWrite(5, TimeUnit.MINUTES)    // TTL
+        .expireAfterAccess(2, TimeUnit.MINUTES)   // TTI
+        .maximumSize(1000));                      // LRU
+    return cacheManager;
+}
+Using Ehcache
+<ehcache xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="http://www.ehcache.org/ehcache.xsd">
+    <cache name="usersCache"
+           maxEntriesLocalHeap="1000"
+           timeToLiveSeconds="300"   <!-- TTL -->
+           timeToIdleSeconds="120">  <!-- TTI -->
+    </cache>
+</ehcache>
+@Bean
+public CacheManager cacheManager() {
+    return new EhCacheCacheManager(ehCacheCacheManager().getObject());
+}
+
+@Bean
+public EhCacheManagerFactoryBean ehCacheCacheManager() {
+    EhCacheManagerFactoryBean ehCacheManagerFactoryBean = new EhCacheManagerFactoryBean();
+    ehCacheManagerFactoryBean.setConfigLocation(new ClassPathResource("ehcache.xml"));
+    return ehCacheManagerFactoryBean;
+}
+
+
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-actuator</artifactId>
+</dependency>
+
+management.endpoint.caches.enabled=true
+management.endpoints.web.exposure.include=health,info,caches
+
+
+
+
+sudo update-alternatives --config java
+
+
+
+https://galib-rabib.medium.com/setting-up-a-mysql-docker-container-for-development-a-comprehensive-guide-52f04eb73e07
+
+https://hands-on.cloud/docker/install-ubuntu/
+
+https://louchen.top/posts/middleware_tool/ElasticSearch%E5%8F%8AELK/Elasticsearch%20Java%20API%20Client%E8%AF%A6%E8%A7%A3.html#%E5%88%9B%E5%BB%BA%E7%B4%A2%E5%BC%95

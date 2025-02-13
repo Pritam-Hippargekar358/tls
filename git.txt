@@ -1,0 +1,942 @@
+@Component
+public class RestInterceptor implements ClientHttpRequestInterceptor {
+    public static final int BUFFER_SIZE = 1024;
+    private static final Logger LOG = LoggerFactory.getLogger(RestInterceptor.class);
+
+    @Override
+    public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution) throws IOException {
+        auditRequest(request, body);
+        ClientHttpResponse response = execution.execute(request, body);
+        return auditResponse(request, response);
+    }
+
+    private void auditRequest(HttpRequest request, byte[] body) throws IOException {
+//        LOG.info("Request Body: {}" , new String(body, StandardCharsets.UTF_8));
+    }
+
+    private ClientHttpResponse auditResponse(HttpRequest request, ClientHttpResponse response) throws IOException {
+        byte[] buffer = new byte[BUFFER_SIZE];
+        // We read the original body and buffer it into a byte array.
+        ByteArrayOutputStream result = new ByteArrayOutputStream();
+        int length;
+        while ((length = response.getBody().read(buffer)) != -1) {
+            result.write(buffer, 0, length);
+        }
+        byte[] bodyBytes = result.toByteArray();
+        return new ReReadableClientHttpResponse(response, bodyBytes);
+    }
+}
+
+https://bootcamptoprod.com/spring-resttemplate-logging/
+public class ReReadableClientHttpResponse implements ClientHttpResponse {
+
+    private final ClientHttpResponse response;
+    private final byte[] body;
+
+    public ReReadableClientHttpResponse(ClientHttpResponse response, byte[] body) {
+        this.response = response;
+        this.body = body;
+    }
+
+    @Override
+    public HttpStatusCode getStatusCode() throws IOException {
+        return response.getStatusCode();
+    }
+
+    @Override
+    public String getStatusText() throws IOException {
+        return response.getStatusText();
+    }
+
+    @Override
+    public void close() {
+        response.close();
+    }
+
+    @Override
+    public InputStream getBody() throws IOException {
+        // Return the body as a ByteArrayInputStream, which can be read multiple times.
+        return new ByteArrayInputStream(body);
+    }
+
+    @Override
+    public HttpHeaders getHeaders() {
+        return response.getHeaders();
+    }
+}
+
+
+@Component
+public class UserFeignClientInterceptor implements RequestInterceptor {
+
+    @Override
+    public void apply(RequestTemplate template) {
+        //        SecurityUtils.getCurrentUserJWT().ifPresent(s -> template.header(AUTHORIZATION_HEADER, String.format("%s %s", BEARER, s)));
+        final RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
+        if (requestAttributes != null) {
+            final HttpServletRequest httpServletRequest = ((ServletRequestAttributes) requestAttributes).getRequest();
+            template.header(HttpHeaders.AUTHORIZATION, httpServletRequest.getHeader(HttpHeaders.AUTHORIZATION));
+        }
+    }
+}
+
+
+    private String getString(String json, String path) {
+        try {
+            JsonNode root = mapper.readTree(json);
+            return root.path(path).asText();
+        } catch (IOException e) {
+
+            return null;
+        }
+    }
+
+ObjectMapper objectMapper = new ObjectMapper();
+String body = "{\"name\":\"John\", \"age\":30, \"address\":{\"street\":\"123 Main St\", \"city\":\"Anytown\"}}";
+JsonNode root = objectMapper.readTree(body);
+
+
+String name = root.get("name").asText();  
+int age = root.get("age").asInt();    
+JsonNode address = root.get("address");
+Object obj = objectMapper.readValue(address.toPrettyString(), Object.class);
+OR
+String street = address.get("street").asText();  
+String city = address.get("city").asText();  
+
+
+String title = "";
+String body = "";
+JSONObject msg = new JSONObject();
+msg.put("title", title);
+msg.put("body", body);
+msg.toString()		
+
+
+
+// Create the main JSON object
+JsonObject jsonPayload = new JsonObject();
+
+// Create the "monitors" array
+JsonArray monitorsArray = new JsonArray();
+
+import com.fasterxml.jackson.databind.node.ObjectNode;
+ObjectNode jsonObject = objectMapper.createObjectNode();
+jsonObject.put("name", "Alice");
+jsonObject.put("age", 30);
+jsonObject.set("address", objectMapper.createObjectNode().put("street", "123 Maple Street").put("city", "Wonderland"));
+jsonObject.put("isActive", true);
+System.out.println(jsonObject.toString());
+
+String jsonArrayString = "[{\"id\": 1, \"name\": \"John\"}, {\"id\": 2, \"name\": \"Jane\"}]";
+ArrayNode jsonArray = (ArrayNode) objectMapper.readTree(jsonArrayString);
+for (JsonNode element : jsonArray) {
+    System.out.println("ID: " + element.get("id").asInt());
+    System.out.println("Name: " + element.get("name").asText());
+}
+
+ArrayNode jsonArray = objectMapper.createArrayNode();
+ObjectNode person1 = objectMapper.createObjectNode().put("id", 1).put("name", "Alice");
+ObjectNode person2 = objectMapper.createObjectNode().put("id", 2).put("name", "Bob");
+jsonArray.add(person1);
+jsonArray.add(person2);
+System.out.println(jsonArray.toString());
+
+
+Use ArrayNode when:
+You are working with a fixed structure where you know the data is an array.
+You need to perform operations specifically on array elements, such as filtering, sorting, or mapping.
+Use JsonNode when:
+You are dealing with dynamic or nested structures, where some fields may be arrays, while others are objects or primitives.
+You need a flexible approach to handle JSON without strict adherence to a particular structure.
+
+
+Error Handling in JSON Mapping
+When dealing with JSON parsing, it’s essential to handle potential exceptions that might arise during the conversion process. Catching and handling exceptions ensures graceful error management within the application:
+
+JsonProcessingException:
+JsonProcessingException is an exception type specific to JSON processing libraries like Jackson and indicates issues encountered during JSON processing. This exception typically arises due to problems such as:
+
+Invalid JSON Format: Occurs when the JSON data doesn’t adhere to the expected structure or contains syntax errors.
+Mismatched Data Types: Arises when there’s a mismatch between the expected data type in Java and the corresponding JSON value during parsing.
+Missing or Unexpected Fields: Occurs when the JSON structure lacks expected fields or contains unexpected extra fields.
+Handling JsonProcessingException allows developers to catch and address issues specifically related to JSON parsing errors.
+
+IOException:
+IOException is a more general exception that signifies input/output errors while performing operations like reading or writing data. In the context of JSON parsing:
+
+Network Errors: IOExceptions may arise when fetching JSON data from an external source over a network, encountering connection timeouts or disruptions.
+File Handling Errors: If reading JSON data from a file, IOExceptions might occur due to issues like file not found, permission denied, or corrupted file content.
+By handling IOException, developers can manage scenarios where issues go beyond JSON parsing and encompass broader input/output-related problems.
+
+ObjectMapper mapper = new ObjectMapper();
+mapper.enable(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT);
+try {
+    // JSON to Java mapping code
+} catch (JsonProcessingException e) {
+    System.out.println("Error occurred during JSON parsing: " + e.getMessage());
+} catch (IOException e) {
+    System.out.println("IO Exception occurred: " + e.getMessage());
+}
+
+
+Best Practices for JSON Mapping
+Validate JSON structure before mapping to prevent unexpected issues.
+Create a clear Java class structure mirroring the JSON hierarchy for easy mapping.
+Implement proper error handling to handle parsing exceptions gracefully.
+Ensure proper null handling for optional JSON fields in the Java class.
+
+//    @Bean
+//    public RestTemplate pooledRestTemplate() {
+//        PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager();
+//        connectionManager.setMaxTotal(2000);
+//        connectionManager.setDefaultMaxPerRoute(2000);
+//
+//        HttpClient httpClient = HttpClientBuilder.create()
+//            .setConnectionManager(connectionManager)
+//            .build();
+//
+//        return new RestTemplateBuilder().rootUri("http://service-b-base-url:8080/")
+//            .setConnectTimeout(Duration.ofMillis(1000))
+//            .setReadTimeout(Duration.ofMillis(1000))
+//            .messageConverters(new StringHttpMessageConverter(), new MappingJackson2HttpMessageConverter())
+//            .requestFactory(() -> new HttpComponentsClientHttpRequestFactory(httpClient))
+//            .build();
+//    }
+
+
+//    HttpComponentsClientHttpRequestFactory requestFactory = new HttpComponentsClientHttpRequestFactory();
+//requestFactory.setConnectTimeout(timeout);
+//requestFactory.setReadTimeout(timeout);
+//    RestTemplate restTemplate = new RestTemplate(requestFactory);
+
+
+
+
+//    return HttpClients.custom()
+//        .setConnectionManager(connManager)
+//                .setDefaultRequestConfig(requestConfig)
+//                .setConnectionBackoffStrategy(new DefaultBackoffStrategy()) 
+//        .setKeepAliveStrategy(new DefaultConnectionKeepAliveStrategy()) 
+//        .setRetryStrategy(new DefaultHttpRequestRetryStrategy(retryCount, TimeValue.ofMilliseconds(backoff))) 
+//        .evictIdleConnections(TimeValue.ofSeconds(idleConnectionTimeoutSec))
+//        .build();
+
+public class SampleData {
+    public static List<Student> get() throws IOException {
+        var file = new File("students.json");
+        return new ObjectMapper().readValue(file, new TypeReference<>() {});
+    }
+}
+    private static ObjectMapper createObjectMapper() {
+        ObjectMapper objectMapper = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
+        return objectMapper;
+    }
+
+ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+		mapper.registerModule(new JodaModule());
+		 mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+	
+	
+pan validation request status code: 200 - {"request_id":"d3def8eb-8b9d-47fb-bffb-a8d144973a64","transaction_id":"f3b7825c-061a-40e2-995d-716411759aaf","status":200,"data":{"code":"1010","message":"Provided document is not a PAN."},"timestamp":1736938170227,"path":"/pan-api/ocr"} 	
+	
+	
+docker cp 09306a928672:/var/lib/postgresql/data/pg_hba.conf ~/spring-ayushma/docker-setup/migrations/
+docker cp 09306a928672:/var/lib/postgresql/data/postgresql.conf ~/spring-ayushma/docker-setup/migrations/
+
+https://medium.com/@sarkarpabitra1999/title-secure-secret-management-in-maven-projects-with-aws-secret-manager-0d904e12fa1a
+	
+                <liquibase-plugin.password>password@5432</liquibase-plugin.password>
+                <liquibase-plugin.url>jdbc:postgresql://localhost:5432/bettertrack</liquibase-plugin.url>
+                <liquibase-plugin.username>stage</liquibase-plugin.username>
+	
+docker-compose -f src/main/docker/postgresql.yml config
+docker-compose -f src/main/docker/consul.yml up -d
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true	
+
+spring_datasource_driver-class-name=org.postgresql.Driver
+url: jdbc:postgresql://vkyc.chg0qe22ov2w.ap-south-1.rds.amazonaws.com:5432/vkyc
+username: pgadmin
+password: 9TdmzjJifArG5JGKwbYO 
+ssh ubuntu@13.201.18.132
+
+Utilizing HttpMessageConverters:
+Spring offers HttpMessageConverters to convert response into any adequate object. Examples of these converters include MappingJackson2HttpMessageConverter, StringHttpMessageConverter, etc. We can use them to decode RESTful responses into suitable models.
+	
+609916194186
+688532407814
+391750906326
+5d6caac7-93b9-4fd2-8b0b-ff4c16a59e39	
+
+docker compose down vcipintegration
+scp -i vkyc-api.pem -r ~/Desktop/temp-pull/vkycb/vcip-integration/target/vcip-integration-0.0.1-SNAPSHOT.jar ubuntu@13.201.18.132:/home/ubuntu/vkyc/target
+docker compose build vcipintegration
+docker compose up vcipintegration -d
+docker compose logs -f vcipintegration
+
+docker compose down authentication
+scp -i vkyc-api.pem -r ~/Desktop/temp-pull/vkycb/vcip-authentication/target/vcip-authentication-0.0.1-SNAPSHOT.jar ubuntu@13.201.18.132:/home/ubuntu/vkyc/target
+docker compose build authentication
+docker compose up authentication -d
+docker compose logs -f authentication
+
+
+docker compose down videoprovider
+scp -i vkyc-api.pem -r ~/Desktop/temp-pull/vkycb/video-provider/target/video-provider-0.0.1-SNAPSHOT.jar ubuntu@13.201.18.132:/home/ubuntu/vkyc/target
+docker compose build videoprovider
+docker compose up videoprovider -d
+docker compose logs -f videoprovider
+
+user 
+................
+edit mobile fullname role
+view & search email
+re-call back 
+download recording api.
+
+Java (Spring Boot)
+TypeScript (React)
+com.ongrid.authentication
+Show container information.
+.......................................
+cat /etc/*-release
+
+docker volume rm rest_pgdata
+docker volume
+List all containers (only IDs)
+docker ps -aq
+
+Stop all running containers
+docker stop $(docker ps -aq)
+
+Remove all containers
+docker rm $(docker ps -aq)
+
+Remove all images
+docker rmi $(docker images -q)
+
+Primitive Props: Like numbers, strings, booleans, passed directly.
+Object Props: Pass objects or arrays by reference.
+Function Props: Useful for callbacks or for passing down event handlers.
+
+
+class StaticExample {
+    private static final String str = "Constant";
+} 
+Field f = StaticExample.class.getDeclaredField("str");
+f.setAccessible(true);
+f.set(null, "Mocked Constant1");
+
+doReturn(someValue).when(mock).someMethod(); // for void methods
+when(mock.someMethod()).thenReturn(someValue); // for methods with return value
+
+doThrow(new RuntimeException()).when(mock).someMethod(); // for void methods
+when(mock.someMethod()).thenThrow(new RuntimeException()); // for methods with return value
+
+doAnswer(invocation -> {....}
+    return null;
+}).when(mock).someMethod();
+
+@ExtendWith(MockitoExtension.class)
+class StaticMethodMockingTest {
+
+    @Test
+    void testStaticMethodMocking() {
+        try (MockedStatic<UtilityClass> mocked = Mockito.mockStatic(UtilityClass.class)) {
+            mocked.when(UtilityClass::staticMethod).thenReturn("mocked");
+            assertEquals("mocked", UtilityClass.staticMethod());
+        }
+    }
+}
+
+https://medium.com/@jinvishal2011/comprehensive-guide-integrating-keycloak-with-java-applications-part-1-1ac31b4ef4f8
+
+private JwtAuthenticationConverter jwtAuthenticationConverter() {
+	JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+	converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+		Map<String, Object> realmAccess = jwt.getClaimAsMap("realm_access");
+		if (realmAccess == null || !realmAccess.containsKey("roles")) {
+			return Collections.emptyList();
+		}
+
+		List<String> roles = (List<String>) realmAccess.get("roles");
+		return roles.stream()
+				.map(roleName -> "ROLE_" + roleName.toUpperCase())
+				.map(SimpleGrantedAuthority::new)
+				.collect(Collectors.toList());
+	});
+	return converter;
+}
+	
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.keycloak</groupId>
+        <artifactId>keycloak-spring-boot-starter</artifactId>
+        <version>21.1.1</version>
+    </dependency>
+</dependencies>
+
+# application.yml
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8080/realms/java-app
+          jwk-set-uri: http://localhost:8080/realms/java-app/protocol/openid-connect/certs
+
+keycloak:
+  realm: java-app
+  auth-server-url: http://localhost:8080
+  ssl-required: external
+  resource: java-backend
+  credentials:
+    secret: your-client-secret
+  use-resource-role-mappings: true
+  bearer-only: true
+@Service
+@Slf4j
+public class KeycloakUserService {
+    private final KeycloakClient keycloakClient;
+
+    public UserDetails getCurrentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new UnauthorizedException("User not authenticated");
+        }
+
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+        return mapJwtToUserDetails(jwt);
+    }
+
+    public List<String> getUserRoles() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .collect(Collectors.toList());
+    }
+
+    private UserDetails mapJwtToUserDetails(Jwt jwt) {
+        String username = jwt.getClaimAsString("preferred_username");
+        String email = jwt.getClaimAsString("email");
+        List<String> roles = jwt.getClaimAsStringList("realm_access.roles");
+
+        List<GrantedAuthority> authorities = roles.stream()
+                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
+                .collect(Collectors.toList());
+
+        return User.builder()
+                .username(username)
+                .password("")
+                .authorities(authorities)
+                .build();
+    }
+}
+
+@Configuration
+public class CorsSecurityConfig {
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOrigins(Arrays.asList("https://trusted-domain.com"));
+        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type"));
+        //config.setExposedHeaders(Arrays.asList("X-Custom-Header"));
+        config.setAllowCredentials(true);
+        config.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
+    }
+}
+
+@RestController
+@RequestMapping("/api")
+public class SecuredController {
+
+    @GetMapping("/public")
+    public ResponseEntity<String> publicEndpoint() {
+        return ResponseEntity.ok("Public endpoint");
+    }
+
+    @GetMapping("/user")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<String> userEndpoint() {
+        return ResponseEntity.ok("User endpoint");
+    }
+
+    @GetMapping("/admin")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<String> adminEndpoint() {
+        return ResponseEntity.ok("Admin endpoint");
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<Map<String, Object>> userInfo(@AuthenticationPrincipal Jwt jwt) {
+        Map<String, Object> userInfo = new HashMap<>();
+        userInfo.put("sub", jwt.getSubject());
+        userInfo.put("preferred_username", jwt.getClaimAsString("preferred_username"));
+        userInfo.put("email", jwt.getClaimAsString("email"));
+        userInfo.put("roles", jwt.getClaimAsStringList("realm_access.roles"));
+        return ResponseEntity.ok(userInfo);
+    }
+}
+https://www.programcreek.com/java-api-examples/?api=org.keycloak.admin.client.resource.ClientResource
+https://medium.com/@jawadrashid/accessing-keycloak-api-using-java-and-aws-lambda-part-2-198e4e418707
+https://medium.com/@jinvishal2011/comprehensive-guide-integrating-keycloak-with-java-applications-part-1-1ac31b4ef4f8
+https://gitlab.com/code-with-bisky/keycloak-auth-service-spring-boot/-/blob/main/src/main/java/com/codewithbisky/keycloak/service/impl/UserServiceImpl.java?ref_type=heads
+https://github.com/stylepatrick/keycloak-admin-client-rest-api/blob/main/src/main/java/com/stylepatrick/keycloakAdminClientRestApi/resource/api/ApiRestController.java
+https://github.com/mbogner/spring-boot-starter-keycloak-admin-api/blob/develop/src/main/javaGen/dev/mbo/keycloak/admin/api/UsersApi.java
+
+
+
+server:
+  port: 8082
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8080/realms/idprovidersandbox
+          jwk-set-uri: http://localhost:8080/realms/idprovidersandbox/protocol/openid-connect/certs
+		  
+The jwk-set-uri property contains the public key that the server can use for this purpose. 		  
+The issuer-uri property points to the base Authorization Server URI, which can also be used to verify the iss claim as an added security measure
+
+http://localhost:8080/realms/idprovidersandbox/.well-known/openid-configuration
+
+hasAuthority("ROLE_developer"); //you have to add the prefix ROLE_ by yourself.
+hasRole("developer"); // it is working the same as above, but without needing to add prefix ROLE_
+		  
+intigration-service 
+.exceptionHandling(ex ->
+                        ex.authenticationEntryPoint(entryPoint.handler())
+                                .accessDeniedHandler(accessDeniedHandler.handler()))
+.oauth2ResourceServer(oauth2ResourceServer ->  
+	oauth2ResourceServer  
+		.jwt(jwt ->  
+			jwt.jwtAuthenticationConverter(getJwtAuthenticationConverter()))  
+)
+ private static final String AUTHORITY_PREFIX = "ROLE_";  
+ private static final String CLAIM_ROLES = "roles";  	  
+
+private Converter<Jwt, AbstractAuthenticationToken> getJwtAuthenticationConverter() {  
+ JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();  
+ jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(getJwtGrantedAuthoritiesConverter());  
+ return jwtAuthenticationConverter;  
+}  
+
+private Converter<Jwt, Collection<GrantedAuthority>> getJwtGrantedAuthoritiesConverter() {  
+  JwtGrantedAuthoritiesConverter converter = new JwtGrantedAuthoritiesConverter();  
+  converter.setAuthorityPrefix(AUTHORITY_PREFIX);  
+  converter.setAuthoritiesClaimName(CLAIM_ROLES);  
+  return converter;  
+} 	  
+
+
+
+NOT_SUPPORTED
+This means the method will not run in a transaction. If an existing transaction exists, it will be suspended while the method is executed.
+@Transactional(propagation = Propagation.NOT_SUPPORTED)
+Ideal for operations that must not run within a transaction, such as certain batch processes or long-running tasks.
+
+SUPPORTS
+If a transaction exists, the method will participate in that transaction. If no transaction exists, the method will run without a transaction.
+@Transactional(propagation = Propagation.SUPPORTS)
+This is typically used for read-only operations where a transaction is not strictly necessary.
+
+NESTED
+This level starts a new transaction within the existing one, which can be committed or rolled back independently. If the outer transaction fails, the nested transaction will also roll back.
+@Transactional(propagation = Propagation.NESTED)
+This is useful in situations where you need a rollback point in the middle of a larger transaction.
+
+
+
+    // file(session_id + customer_id + pan_capture_by_customer)   current flow
+    // file(session_id + customer_id + pan_capture_by_agent)
+	
+https://medium.com/javarevisited/spring-boot-3-implementing-jwt-authentication-with-keycloak-a1dae49c18ae	
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+</dependency>
+
+spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost:8180/realms/master
+spring.security.oauth2.resourceserver.jwt.jwk-set-uri=http://localhost:8180/realms/master/protocol/openid-connect/certs
+	
+issuer-uri: This is the unique identifier of your Keycloak realm, representing the issuer of the JWT tokens.
+jwk-set-uri: This points to the endpoint where Keycloak exposes its JSON Web Key Set (JWKS), used to verify the signatures of the JWT tokens.	
+
+Client Roles: These roles are specific to a particular client application. Clients are created in the Keycloak administration interface and can be assigned to users within a specific client.
+Realm Roles: These roles represent a realm, which can be a real or virtual application domain. Realm roles are applicable to all clients within a realm and can be assigned to users across the entire realm.
+
+@EnableWebSecurity
+@Configuration
+public class SecurityConfig {
+    
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        
+        // Disable CSRF protection
+        http.csrf(AbstractHttpConfigurer::disable);
+        
+        // Configure CORS settings
+        http.cors(cors -> cors.configurationSource(request -> corsConfiguration));
+        
+        // Require authentication for all requests
+        http.authorizeHttpRequests(request -> request.anyRequest().authenticated());
+        
+        // Set session management to stateless
+        http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+        
+        // Customize OAuth2 resource server configuration
+        http.oauth2ResourceServer(
+            oauth2 -> {
+                // Add custom JWT decoder, converter, or other configurations
+            }
+        );
+        
+        return http.build();
+    }
+}
+
+Responsibilities
+
+Design and develop advanced Angular applications, focusing on scalability and performance. Mentor junior developers, leading by example in best practices and code quality. Architect new features and ensure they align with the overall system architecture. Collaborate with UX/UI designers to refine and implement designs. Manage application state effectively using libraries like NgRx or Akita. Implement security best practices within the Angular framework. Drive the adoption of new Angular features to keep applications modern and efficient.
+
+Practical experience of using Kafka as a messaging platform
+Experience in Oracle PL/SQL programming is required
+Knowledge of SQL and relational databases
+Experience working in an agile team, practicing Scrum, Kanban or XP
+Experience of performing Functional Analysis is highly desirable
+
+Experience in Java, Spring is a must and ReactJS is preferred.
+Consistently demonstrates clear and concise written and verbal communication
+
+Minimum of 3 years of proven experience in Java full-stack development
+Proficiency in Java Core and Java 8
+Expertise in Spring Boot and Microservice Architecture Pattern
+Skills in creating applications using REST and SQL
+Competency in front-end development with Angular
+Understanding of CI/CD practices
+
+Write high-quality code
+Offer good solutions for business problems
+Work together with other team members on achieving common goal
+Perform code review of other team members
+Provide estimates for tasks
+Communicate with the customer when it is required
+Meet deadlines
+
+Must have a solid understanding of Object-Oriented analysis and design is required.
+Must have solid troubleshooting skills for enterprise level production application systems.
+Must be able to take initiative to learn existing applications through reviewing code and analyzing data.
+Must be able to write complex stored procedures, triggers, and functions in Oracle 19c. Good-to-Have
+Excellent interpersonal and communication skills (verbal and written).
+
+Used Spring boot Actuator to monitor and manage the application in production environment.
+
+Active participation in entire life cycle of software developement. Activities inclide study of conceptual design as well as detailed design , coding, unit-testing, system intigration and supports, and also supported software configurations management.
+
+Designed and developed a RestFul api's for different modules in the project as per the requirements
+
+co-ordinate with all the teams for functional requirements and ensure compliance to all architecture standards.
+
+involved in spring planning for estimation of efforts for user stories and bugs.
+
+Strong concepts and fundamentals in Agile methodology, Object Oriented Analysis and Design, Best Practices.
+
+Created Store Procedures and functions and wrote complex sql queries for various functionalities.
+
+
+
+Over 3+ years of software developement experience in object oriented programming, design and developement of multi-tier dustributed, Enterprise application using java & J2EE technologies with Software developement life cycle. 
+
+and working on the complete System developement life cycle(SDLC)
+
+Extensive experience in the analysis, design, developement , implementation and testing of enterprise application with web techonologies, distributed technologies and client-server architecture environment.
+ 
+ 
+Experiencein implementing Java EE design patterns such as MVC, Singleton, Session Facade, DAO, DTO Service Locator and Business Delegate in the developement of multi-tier distributed Enterprise Applications. 
+ 
+Experience in developing PL/SQL, Stored procedures, functions, trigger  and views on MySql. 
+
+Good work experience in writing sql queries with major Relational Databases.
+ 
+Ablility to quickly adapt to new environments and learn new technologies. 
+
+Used Intellij for developing code modules in the developement environment
+Attending Daily & weekly scrum call with team and discuss on issues/progress. Involved in gathering businedd re
+
+
+
+
+
+
+3+ years of strong experience with Java 8+
+8+ Years of strong experience as Java Developer with expertise in J2EE - Java, Spring Boot, Java API for data connectivity, REST/SOAP, Design patterns, Microservices.
+Very Strong in terms of refactoring, best coding practices and code optimization.
+
+Work collaboratively with design team to understand end user requirements to provide technical solutions and for the implementation of new software features
+
+Write reusable, testable, and efficient code
+Design and implement of low-latency, high-availability and performant applications
+
+
+provide technical guidance and support during requirement analysis, design, system and user acceptance testing activities.
+
+participated in code reviews for various initiatives, performed static code analysis to follow the best pratices for performance and security.
+
+Used Rest API to expose the --- for clients and performed versioning of existing services.
+
+Used Quartz Jod schedular to schedule the tasks to run on a pre-defined data and time.
+Used spring dependency injection to achieve loose coupling and high cohesion in components/classes
+Used spring dependency injection to configure depemdencies and to achieve low coupling between classes.
+Implemented cross cutting concerns as aspects as service layer using spring AOP.
+
+performed object relational mapping between data-base tables and java classes and developed data access layer.
+
+
+Implemented action classes to interact with business objects.
+Design and developed thread-safe classes to represents various concurrently accessible objects.
+
+Implemented application business logic using various design patterns including builder and singleton
+
+worked on various architectural  documents for the project including use-case diagram, sequence diagram and class diagram etc.
+
+used mobile web application for bank customer  to perform banking activities from smart phones. 
+
+designed and implemented of the new change requests and ensured that there is no impact on the existing functionality.
+Anlyzed the alter accounts impact to in corporate the necessary steps such that the already existing production policies will not issues with new code chnages.
+Understand the alter impact and reducing the impact on the existing system.
+
+
+
+Key Responsibilities:
+//////////////////////////////////////////
+
+Implementation of effective unit testing practices to ensure proper code design, readability, and reliability.
+Development and delivery of high-quality software solutions by using industry aligned programming languages, frameworks, and tools. Ensuring that code is scalable, maintainable, and optimized for performance.
+Analyze, design, develop, test, and maintain scalable applications using Java for backend and modern JavaScript frameworks for frontend
+Build distributed system based on service-oriented architecture and SOLID design principles
+Develop and optimize SQL queries, and database schema designs
+Write clean, maintainable, and efficient code following best practices and coding standards
+Be passionate about delivering quality code and build culture of continuous learning and improvement in team by identifying technical debts/improvements
+Have the desire to collaborate, and like sharing and learning from your colleagues
+Provide input and guidance to resolve issues and meet objectives
+Implementation of effective unit testing practices to ensure proper code design, readability, and reliability.
+Familiarity with test-driven development (TDD) and automated testing frameworks (JUnit, Mockito).
+Familiarity with version control systems like Git.
+Experience with relational databases like PostgreSQL.
+Experience in React JS/Node JS
+Extensive REST API development experience using Java
+Proven hands-on Software Development experience
+Proven working experience in Java development
+Exposure to front-end technologies (Javascript, Typescript, React JS)
+Strong proficiency in at least one of the following build tools: Maven, SBT, Gradle
+Good understanding of Design Patterns
+
+Expertise in designing and developing RESTful Web Services using Java and Spring Boot.
+
+Experience in migrating applications to Microservice architecture.
+
+Required Skills, Experience and Qualifications:
+/////////////////////////////////////////////////////////////////
+
+
+BE/BTech or MS degree in Computer Science from a reputed university
+4+ years of full-stack, hands on experience designing & developing of product development experience in Java and related technologies
+Experience implementing Design Patterns/SOLID principles/OOPS
+Experience developing and working with databases (Oracle, MSSQL, NoSQL)
+Experience in successful implementation/adoption of Agile and Scrum methodologies
+Test-driven development, which includes Unit and End-to-End Testing
+Excellent analytical, problem-solving and communication skills
+Experience working with teams across different time-zones and countries
+Ability to work independently and collaboratively
+Ensure product quality and timeliness of work
+FinTech experience will be a plus
+
+
+1. Byte Streams: Handle raw binary data(such as images, audio files, etc).
+	Byte streams read and write data in bytes (8 bits). 
+	1. InputStream: The superclass for all byte input streams.
+	2. OutputStream: The superclass for all byte output streams.
+2. Character Streams: Handle character data (text).
+	Character streams read and write data in characters (16 bits).
+	1. Reader: The superclass for all character input streams.
+	2. Writer: The superclass for all character output streams.
+	
+Buffered Streams
+Buffered streams are used to improve the efficiency of I/O operations by reducing the number of read and write operations. They wrap around byte or character streams.
+
+Data Streams
+Data streams allow you to read and write primitive data types (int, char, etc.) and strings in a machine-independent way.		
+
+
+Performed client side validations using javascript functions to implements various functionality.
+involved in implementing the rich user interface using JSP Standard Tag Libraries for achieving most code-reusability and worked with custom tags libraries. 
+
+
+I worked on a task to decrease database load for search and moved some part of search to Elastic Search search engine.
+
+Created pseudo server response and data result for testing without depending on the third party api's 
+
+
+used jms for the asynchronous exchnage of critical business data and events among J2EE components and legacy system
+
+used hibernate ORM tool which automate the mapping between sql database and objects in java.
+
+Dealing with data access layer to access and update data from database.
+involved in creating and maintaining data-base tables and stored procedures for various modules.
+maintaining change log of the application for future reference .
+Resposible for transating the business requirements to technical design and framework developement.
+
+participated in the discussion with the business experts to understand the business requirements and translate them in to technical requirements towards developement.
+
+used apache maven to download the dependencies and also to maintain the uniform build.
+Conducting unit testing of applications and identifying & resolving the bugs.
+
+Responsible for conducting impact analysis for the given chnage request.
+developed various reusable helper and utility classes which are used across all the modules of the application.
+Responsible for the analysis of the requirements of the business, designing data-base tables.
+
+
+
+
+
+
+
+Responsible for preparing technical documents and reports. 
+Responsible for product release and supports
+I built out basic product developement in the starting of project using React.js, which allowed us to render pages both client and server side using codebases.
+
+
+
+
+
+worked on spring Quartz functionality for scheduling tasks such as generating monthly reports for customers and sending those mails about different policies
+
+used elsactic search to search the application logs and used Log4j for logging.
+
+
+worked on providing security to the application. Configured the user and roles in keyclock.
+
+Excellent analytical and problem solving skills with ability to master new concepts.
+
+
+
+Good working knowledge of industry best practices for Enterprise developement including implementation and refactoring to design patterns.
+Expert core java as well as Java EE technology skills having utilized cutting edge technologies such as threading/concurrency, messaging and rest based web services.
+
+
+
+3+ years of experience in design and implementation of Enterprise level Web based, Client-Server and distributed software application using Java/J2EE.
+
+
+
+Responsibilities
+
+Design and develop advanced Angular applications, focusing on scalability and performance. Mentor junior developers, leading by example in best practices and code quality. Architect new features and ensure they align with the overall system architecture. Collaborate with UX/UI designers to refine and implement designs. Manage application state effectively using libraries like NgRx or Akita. Implement security best practices within the Angular framework. Drive the adoption of new Angular features to keep applications modern and efficient.
+
+Practical experience of using Kafka as a messaging platform
+Experience in Oracle PL/SQL programming is required
+Knowledge of SQL and relational databases
+Experience working in an agile team, practicing Scrum, Kanban or XP
+Experience of performing Functional Analysis is highly desirable
+
+Experience in Java, Spring is a must and ReactJS is preferred.
+Consistently demonstrates clear and concise written and verbal communication
+
+Minimum of 3 years of proven experience in Java full-stack development
+Proficiency in Java Core and Java 8
+Expertise in Spring Boot and Microservice Architecture Pattern
+Skills in creating applications using REST and SQL
+Competency in front-end development with Angular
+Understanding of CI/CD practices
+
+Write high-quality code
+Offer good solutions for business problems
+Work together with other team members on achieving common goal
+Perform code review of other team members
+Provide estimates for tasks
+Communicate with the customer when it is required
+Meet deadlines
+
+Must have a solid understanding of Object-Oriented analysis and design is required.
+Must have solid troubleshooting skills for enterprise level production application systems.
+Must be able to take initiative to learn existing applications through reviewing code and analyzing data.
+Must be able to write complex stored procedures, triggers, and functions in Oracle 19c. Good-to-Have
+Excellent interpersonal and communication skills (verbal and written).
+
+Used Spring boot Actuator to monitor and manage the application in production environment.
+
+Active participation in entire life cycle of software developement. Activities inclide study of conceptual design as well as detailed design , coding, unit-testing, system intigration and supports, and also supported software configurations management.
+
+Designed and developed a RestFul api's for different modules in the project as per the requirements
+
+co-ordinate with all the teams for functional requirements and ensure compliance to all architecture standards.
+
+involved in spring planning for estimation of efforts for user stories and bugs.
+
+Strong concepts and fundamentals in Agile methodology, Object Oriented Analysis and Design, Best Practices.
+
+Created Store Procedures and functions and wrote complex sql queries for various functionalities.
+
+
+
+Over 3+ years of software developement experience in object oriented programming, design and developement of multi-tier dustributed, Enterprise application using java & J2EE technologies with Software developement life cycle. 
+
+and working on the complete System developement life cycle(SDLC)
+
+Extensive experience in the analysis, design, developement , implementation and testing of enterprise application with web techonologies, distributed technologies and client-server architecture environment.
+ 
+ 
+Experiencein implementing Java EE design patterns such as MVC, Singleton, Session Facade, DAO, DTO Service Locator and Business Delegate in the developement of multi-tier distributed Enterprise Applications. 
+ 
+Experience in developing PL/SQL, Stored procedures, functions, trigger  and views on MySql. 
+
+Good work experience in writing sql queries with major Relational Databases.
+ 
+Ablility to quickly adapt to new environments and learn new technologies. 
+
+Used Intellij for developing code modules in the developement environment
+Attending Daily & weekly scrum call with team and discuss on issues/progress. Involved in gathering businedd re
+
+
+
+
+
+
+3+ years of strong experience with Java 8+
+8+ Years of strong experience as Java Developer with expertise in J2EE - Java, Spring Boot, Java API for data connectivity, REST/SOAP, Design patterns, Microservices.
+Very Strong in terms of refactoring, best coding practices and code optimization.
+
+Work collaboratively with design team to understand end user requirements to provide technical solutions and for the implementation of new software features
+
+Write reusable, testable, and efficient code
+Design and implement of low-latency, high-availability and performant applications
+
+
+
+sudo nano /etc/sysctl.conf
+# Set vm.max_map_count to increase memory map areas
+vm.max_map_count=262144
+Save the file and exit the text editor.
+
+Apply the changes by running the following command
+sudo sysctl -p
+
+

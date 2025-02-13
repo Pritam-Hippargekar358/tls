@@ -1,0 +1,411 @@
+Types of locking:
+1- Read Lock or a shared lock:
+The locked data is reserved for read by the current session. Other sessions can read the locked data. But they can not write (update) the locked data.
+
+2- Write Lock or an exclusive lock:
+The locked data is reserved for write by the current session. Other sessions can not read and write the locked data.
+
+
+Levels of locking:
+...................................
+1- Table lock : All the rows will be locked when the table is locked.
+2- Row lock : Some rows will be locked in the table , but other rows will not be locked.
+3- Column lock : Some columns of a row will be locked, but other columns are not locked.
+
+Use FOR UPDATE to Lock Rows
+SELECT a,b,c,d FROM <table> WHERE account_id = 1 …. FOR UPDATE :
+Any lock placed with the `FOR UPDATE` will not allow other transactions to read, update or delete the row. Other transaction can read this rows only once first transaction get commit or rollback.
+
+Lock In Share mode:
+SELECT * FROM table_name WHERE id=10 LOCK IN SHARE MODE
+Any lock placed with `LOCK IN SHARE MODE` will allow other transaction to read the locked row but it will not allow other transaction to update or delete the row.
+Other transaction can update or delete the row once the first transaction gets commit or rollback
+
+
+Use SKIP LOCKED and NOWAIT for Better Concurrency Control
+SKIP LOCKED: This option allows you to skip over rows that are currently locked by other transactions. This can be helpful in cases where you want to process multiple records without waiting for locks held by other transactions to be released. For example, if you're processing a queue of financial transactions, you can use SKIP LOCKED it to process unlocked records without waiting for locked records to become available:
+SELECT * FROM transactions WHERE status = 'pending' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED;
+
+NOWAIT: The NOWAIT the option makes your query fail immediately if it encounters a locked row instead of waiting for the lock to be released. This can be useful in cases where you want to avoid waiting for a lock, allowing you to implement custom error handling or retry logic. For example:
+START TRANSACTION;
+SELECT amount FROM accounts WHERE account_id = 1 FOR UPDATE NOWAIT;
+-- If the row is locked, an error will be raised, and you can handle it accordingly
+COMMIT;
+
+https://thiagobfim.medium.com/a-deep-dive-into-multithreading-challenges-681ca2a4b288
+Isolation Level Matter a Lot
+READ UNCOMMITTED
+-Allows transactions to read uncommitted changes made by other transactions.
+- there is a high risk of dirty reads, non-repeatable reads, and phantom reads.
+READ COMMITTED
+-Ensures that a transaction can only read committed changes made by other transactions.
+-Eliminates dirty reads but may still allow non-repeatable reads and phantom reads.
+REPEATABLE READ (default)
+-Guarantees that a transaction can repeatedly read the same set of committed data, preventing non-repeatable reads.
+-Still allows for phantom reads, where new rows meeting the search criteria may appear between consecutive reads.
+SERIALIZABLE
+-Provides the highest level of isolation by ensuring that transactions are executed in a manner that is equivalent to some serial order.
+-Eliminates dirty reads, non-repeatable reads, and phantom reads.
+
+The default isolation level for InnoDB is REPEATABLE READ.
+There are Dirty Read , Non-repeatable Read, and Phantom Read anomalies at different levels.
+
+Dirty read
+A transaction reads data written by a concurrent uncommitted transaction.
+
+Nonrepeatable read
+A transaction re-reads data it has previously read and finds that data has been modified by another transaction (that committed since the initial read).
+
+Phantom read
+A transaction re-executes a query returning a set of rows that satisfy a search condition and finds that the set of rows satisfying the condition has changed due to another recently-committed transaction.
+
+Serialization anomaly
+The result of successfully committing a group of transactions is inconsistent with all possible orderings of running those transactions one at a time.
+
+CREATE TABLE employees (
+    id bigint primary key auto_increment, 
+    first_name varchar(100), 
+    last_name varchar(100)
+);
+CREATE TABLE birthdays (
+    emp_id bigint,
+    birthday date,
+    constraint foreign key (emp_id) references employees(id)
+);
+
+CREATE procedure new_employee(first char(100), last char(100), birthday date)
+BEGIN
+    INSERT INTO employees (first_name, last_name) VALUES (first, last);
+    SET @id = (SELECT last_insert_id());
+    INSERT INTO birthdays (emp_id, birthday) VALUES (@id, birthday);
+END;
+call new_employee("tim", "sehn", "1980-02-03");
+
+
+
+CREATE PROCEDURE birthday_count(IN bday date, OUT message varchar(100))
+   DECLARE count int;
+   DECLARE idx int default 2;
+   DECLARE avgMarks DECIMAL(5,2) DEFAULT 0;
+    DECLARE start CHAR(1) DEFAULT 'A';
+   DECLARE name varchar(100);
+BEGIN
+    SET count = (SELECT count(*) FROM birthdays WHERE birthday = bday);
+    IF count = 0 THEN
+        SET message = "Nobody has this birthday";
+    ELSEIF count = 1 THEN
+        SET name = (SELECT concat(first_name, " ", last_name)
+            FROM employees join birthdays
+            on emp_id = id
+            WHERE birthday = bday);
+        SET message = (SELECT concat("It's ", name, "'s birthday"));
+    ELSE
+        SET message = "More than one employee has this birthday";
+    END IF;	
+END
+
+SET @message = '';
+call birthday_count('1985-01-10', @message);
+SELECT @message;
+
+
+
+
+
+DECLARE handler_action HANDLER
+    FOR condition_value [, condition_value] ...
+    statement
+
+handler_action: {
+    CONTINUE
+  | EXIT
+  | UNDO
+}
+
+condition_value: {
+    mysql_error_code
+  | SQLSTATE [VALUE] sqlstate_value
+  | condition_name
+  | SQLWARNING
+  | NOT FOUND
+  | SQLEXCEPTION
+}
+
+CONTINUE- The present program is still being run.
+EXIT – The BEGIN… END compound statement in which the handler is declared ends execution. Even if the condition occurs in an inner block, this is still true.
+UNDO – MySQL does not support it.
+
+
+DECLARE EXIT HANDLER FOR 1062 SELECT CONCAT("duplicate entry for the emp id ",empId) AS errorMessage;
+DECLARE EXIT HANDLER FOR SQLEXCEPTION SELECT "SQLEXCEPTION occured" AS errorMessage;
+DECLARE EXIT HANDLER FOR SQLSTATE "23000" SELECT "SQLSTATE 23000" AS errorMessage;
+
+DECLARE CONTINUE HANDLER FOR NOT FOUND
+DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+
+/* SETUP OUR ERROR HANDLER */
+DECLARE EXIT HANDLER FOR SQLEXCEPTION  
+BEGIN
+      ROLLBACK;  -- Undo any changes made during the transaction
+      SELECT 'ROLLBACK! The Following SQLEXCEPTION occured in StudentEnrollmentInsertEH():' AS NOTICE;
+      RESIGNAL;  -- Send the Exception Back to the user
+END;
+
+
+
+CREATE PROCEDURE signalDemo(pval INT)
+BEGIN
+  DECLARE custom_error CONDITION FOR SQLSTATE '45000';
+  IF pval = 0 THEN
+    SIGNAL SQLSTATE '01000';
+  ELSEIF pval = 1 THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'An error occurred';
+  ELSEIF pval = 2 THEN
+    SIGNAL custom_error
+      SET MESSAGE_TEXT = 'Custom error message';
+  ELSE
+    SIGNAL SQLSTATE '01000'
+      SET MESSAGE_TEXT = 'A warning occurred', MYSQL_ERRNO = 1000;
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'An error occurred', MYSQL_ERRNO = 1001;
+  END IF;
+END;
+
+
+    IF datediff(now(), date) < 365 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'attempted to archive recent order history';
+    END IF;
+	
+A standard  SQLSTATE value. Or it can be an  SQLWARNING,  NOTFOUND or  SQLEXCEPTIONcondition, which is shorthand for the class of  SQLSTATE values. The  NOTFOUND condition is used for a  cursor  or   SELECT INTO variable_list statement.
+	
+	
+CREATE PROCEDURE curdemo()
+BEGIN
+  DECLARE done INT DEFAULT FALSE;
+  DECLARE a CHAR(16);
+  DECLARE b, c INT;
+  DECLARE cur1 CURSOR FOR SELECT id,data FROM test.t1;
+  DECLARE cur2 CURSOR FOR SELECT i FROM test.t2;
+  DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+
+  OPEN cur1;
+  OPEN cur2;
+
+  read_loop: LOOP
+    FETCH cur1 INTO a, b;
+    FETCH cur2 INTO c;
+    IF done THEN
+      LEAVE read_loop;
+    END IF;
+    IF b < c THEN
+      INSERT INTO test.t3 VALUES (a,b);
+    ELSE
+      INSERT INTO test.t3 VALUES (a,c);
+    END IF;
+  END LOOP;
+
+  CLOSE cur1;
+  CLOSE cur2;
+END;
+
+
+
+	
+
+
+SELECT
+first_name,
+last_name,
+department,
+salary,
+AVG(salary) OVER (PARTITION BY department)
+FROM employee;
+
+SELECT
+  department_name,
+  AVG(salary) OVER(PARTITION BY department_name) -- AVG is a window function
+FROM employee
+
+SELECT   department_name,
+         MAX(salary) AS max_salary
+FROM     employee
+GROUP BY department_name
+
+SELECT employee_name,
+       salary,
+       department_name,
+       MAX(salary) OVER (PARTITION BY department_name) AS max_salary
+FROM   employee
+
+
+
+WITH first_contact AS (
+    SELECT
+          caller_id,
+          MIN(call_time) AS first_call_time
+    FROM calls
+    GROUP BY caller_id
+)
+SELECT c.*
+FROM calls AS c
+INNER JOIN first_contact AS fc
+ON fc.caller_id = c.caller_id
+AND fc.first_call_time = c.call_time;
+
+
+
+
+
+
+
+CREATE TABLE IF NOT EXISTS organizations (
+    id uuid NOT NULL DEFAULT uuid_generate_v4(),
+    name character varying(320) NOT NULL,
+    phone character varying(32) NOT NULL,
+    email character varying(320) NOT NULL,
+    country character varying(2) NOT NULL,
+    address character varying(255) NOT NULL,
+    city character varying(255) NOT NULL,
+    postal_code character varying(12) NOT NULL,
+	updated_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_organizations PRIMARY KEY (id)
+);
+CREATE TABLE IF NOT EXISTS users (
+    id uuid NOT NULL DEFAULT uuid_generate_v4(),
+    email character varying(320) NOT NULL,
+    password character varying(255) NOT NULL,
+    first_name character varying(80) NOT NULL,
+    last_name character varying(100) NOT NULL,
+    updated_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_users PRIMARY KEY (id),
+    CONSTRAINT uq_users_email UNIQUE (email)
+);
+CREATE TABLE IF NOT EXISTS roles (
+    id uuid NOT NULL DEFAULT uuid_generate_v4(),
+    slug character varying(60) NOT NULL,
+    updated_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_roles PRIMARY KEY (id),
+    CONSTRAINT uq_roles_slug UNIQUE (slug)
+);
+CREATE TABLE IF NOT EXISTS permissions (
+	id uuid NOT NULL DEFAULT uuid_generate_v4(),
+    slug character varying(60) NOT NULL,
+    created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_permissions PRIMARY KEY (id),
+    CONSTRAINT uq_permissions_slug UNIQUE (slug)
+);
+CREATE TABLE IF NOT EXISTS users_roles (
+    user_id uuid NOT NULL,
+    role_id uuid NOT NULL,
+    organization_id uuid NOT NULL,
+    created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_users_roles PRIMARY KEY (user_id, role_id, organization_id),
+    CONSTRAINT fk_users_roles_role FOREIGN KEY (role_id)
+        REFERENCES roles (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE,
+    CONSTRAINT fk_users_roles_user FOREIGN KEY (user_id)
+        REFERENCES users (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE,
+    CONSTRAINT fk_users_roles_organization FOREIGN KEY (organization_id)
+        REFERENCES organizations (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS roles_permissions(
+    role_id uuid NOT NULL,
+    permission_id uuid NOT NULL,
+    updated_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_role_permissions PRIMARY KEY (role_id, permission_id),
+    CONSTRAINT fk_roles_permissions_permission FOREIGN KEY (permission_id)
+        REFERENCES permissions (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE,
+    CONSTRAINT fk_roles_permissions_role FOREIGN KEY (role_id)
+        REFERENCES roles (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE
+);
+CREATE VIEW vw_user_organization_permissions AS
+	SELECT A.user_id, A.organization_id, C.slug as permission_slug
+	FROM users_roles AS A
+	LEFT JOIN roles_permissions AS B ON A.role_id = B.role_id
+	LEFT JOIN permissions AS C on B.permission_id = C.id;
+
+
+
+Declare & Assign Value
+DECLARE @variable_name DATATYPE -- eg. INT, DATETIME
+SET @variable_name = [value] -- Method 1
+SET @variable_name = (SELECT COUNT(*) FROM [dbo].[table_name]) -- Method 2
+
+View Variable Values
+.......................................
+-- First method: Show variable value in results panel
+SELECT @variable_name
+-- Second method: Show variable value in message panel
+PRINT @variable_name
+
+Types of Cursors
+Implicit Cursors: Created automatically when using SELECT statements.
+Explicit Cursors: Created and managed by the user using the DECLARE CURSOR statement.
+
+Types of Cursors
+There are two types of cursors we have discussed so far:
+....................................
+Forward Only
+Scroll.
+Forward only is the default cursor which reads only in one direction i.e. forward relative to its current position. The scroll cursor lets us read Nth record and also lets us read forward ( NEXT ), backward ( PRIOR ) and with a step size to skip intermediate records ( RELATIVE N ).
+
+
+Reading Multiple Records (First to Last)
+FETCH NEXT FROM Cursor_Name
+
+Reading Multiple Records (Last to First)
+DECLARE Cursor_Name CURSOR SCROLL
+    FOR SELECT Col1, Col2 FROM table1
+OPEN Cursor_Name
+    FETCH LAST FROM Cursor_Name
+WHILE @@FETCH_STATUS=0
+        FETCH PRIOR FROM Cursor_Name
+CLOSE Cursor_Name
+
+
+Reading Nth Record(FETCH ABSOLUTE N-1 FROM/FETCH ABSOLUTE -N FROM)
+................................
+DECLARE Cursor_Name CURSOR SCROLL
+    FOR SELECT Col1, Col2 FROM table1
+OPEN Cursor_Name
+    FETCH ABSOLUTE 5 FROM Cursor_Name
+CLOSE Cursor_Name
+
+
+Stepping While Reading Records
+.........................................................
+DECLARE Cursor_Name CURSOR SCROLL
+    FOR SELECT Col1, Col2 FROM table1
+OPEN Cursor_Name
+    FETCH ABSOLUTE 5 FROM Cursor_Name
+WHILE @@FETCH_STATUS=0
+        FETCH RELATIVE 10 FROM Cursor_Name
+CLOSE Cursor_Name
+
+The above code lets us start at the fifth record of the set. Then we use FETCH RELATIVE N FROM to jump N records from the current spot. The next record read in the loop will be 16th.
+
+To read in reverse we simply negate the number after the RELATIVE keyword.
+
+DECLARE Cursor_Name CURSOR SCROLL
+    FOR SELECT Col1, Col2 FROM table1
+OPEN Cursor_Name
+    FETCH ABSOLUTE -5 FROM Cursor_Name
+WHILE @@FETCH_STATUS=0
+        FETCH RELATIVE -10 FROM Cursor_Name
+CLOSE Cursor_Name
+DEALLOCATE Cursor_Name

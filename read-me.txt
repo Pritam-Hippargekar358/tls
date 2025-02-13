@@ -1,0 +1,176 @@
+First step is to generate the Certificate Authority key and its certificate
+.....................................................................................................
+#Generate CA's private Key
+openssl genpkey -algorithm RSA -out ca-private.key
+
+#Generate self-signed CA Certificate from the above generated private key
+openssl req -new -x509 -days 365 -key ca-private.key -out ca-public.crt -subj "/C=US/ST=California/L=San Francisco/O=MyCompany/OU=IT/CN=myca.com"
+
+Next step is to generate server certificates that are signed by the CA certificate as generated above.
+.....................................................................................................
+# Generate server private key
+openssl genpkey -algorithm RSA -out server-private.key
+
+# Generate server certificate signing request (CSR)
+openssl req -new -key server-private.key -out server.csr -subj "/C=US/ST=California/L=San Francisco/O=MyCompany/OU=IT/CN=server.tech.com"
+
+# Generate server certificate by signing that with CA certificate and CA key
+openssl x509 -req -days 365 -in server.csr -CA ca-public.crt -CAkey ca-private.key -CAcreateserial -out server.crt
+
+Next step is to generate client certificates that are signed by the CA certificate as generated above.
+.....................................................................................................
+# Generate client private key
+openssl genpkey -algorithm RSA -out client-private.key
+
+# Generate client certificate signing request (CSR)
+openssl req -new -key client-private.key -out client.csr -subj "/C=US/ST=California/L=San Francisco/O=MyCompany/OU=IT/CN=client.tech.com"
+
+# Generate client certificate by signing that with CA certificate and CA key
+openssl x509 -req -days 365 -in client.csr -CA ca-public.crt -CAkey ca-private.key -CAcreateserial -out client.crt
+
+
+Next we create the server keystores and trust stores
+.....................................................................................................
+# Create server keystore, here also we'll use CA cert to ensure "root" certificate chain is present
+openssl pkcs12 -export -in server.crt -inkey server-private.key -out server-keystore.p12 -name server -CAfile ca-public.crt -caname root -chain
+
+# Create server truststore using CA certificate, so server know it can trust any certificates signed by CA (root) certificate
+keytool -import -file ca-public.crt -alias ca -keystore server-truststore.jks
+###keytool -import -file ca-public.crt -alias ca -keystore server-truststore.p12 -storetype PKCS12
+
+Next we create the client keystores and trust stores
+.....................................................................................................
+# Create client keystore, here also we'll use CA cert to ensure "root" certificate chain is present
+openssl pkcs12 -export -in client.crt -inkey client-private.key -out client-keystore.p12 -name client -CAfile ca-public.crt -caname root -chain
+
+# Create client truststore using CA certificate, so client know it can trust any certificates signed by CA (root) certificate
+keytool -import -file ca-public.crt -alias ca -keystore client-truststore.jks
+###keytool -import -file ca-public.crt -alias ca -keystore client-truststore.p12 -storetype PKCS12
+
+
+Next we configure our server springboot application —
+.....................................................................................................
+server:
+  port: 8443
+  ssl:
+    enabled: true
+    key-store: classpath:server-keystore.p12
+    key-store-password: server
+    key-store-type: PKCS12
+    key-alias: server
+    trust-store: classpath:server-truststore.jks
+    trust-store-password: serverjks
+    trust-store-alias: ca
+    client-auth: need
+
+
+
+Server application.properties:
+.....................................................
+server.port=8443
+server.ssl.key-store=classpath:cert/server.p12
+server.ssl.key-store-password=[server_keystore_password]
+server.ssl.key-store-type=PKCS12
+server.ssl.client-auth=NEED
+server.ssl.trust-store=classpath:cert/truststore.p12
+server.ssl.trust-store-password=password
+server.ssl.trust-store-type=PKCS12
+
+Client application.properties:
+.....................................................
+client.ssl.key-store=classpath:cert/client.p12
+client.ssl.key-store-password=[client_keystore_password]
+client.ssl.trust-store=classpath:cert/truststore.p12
+client.ssl.trust-store-password=password
+
+
+
+Hostname Verification
+When we generated the server certificate signing request we used below command
+...................................................................................................
+openssl req -new -key server-private.key -out server.csr -subj "/C=US/ST=California/L=San Francisco/O=MyCompany/OU=IT/CN=server.tech.com"
+Note here —
+
+Solution
+There are three solutions —
+
+During the certificate signing request (CSR) you can update the common name to localhost
+openssl req -new -key server-private.key -out server.csr -subj "/C=US/ST=California/L=San Francisco/O=MyCompany/OU=IT/CN=localhost"
+And then we generate the certificate and key store
+
+2. Another thing that you can do is update your hosts file. Ensure server.tech.com resolves to the IP address of your server. You can update your /etc/hosts file (on Linux/Mac) or C:\Windows\System32\drivers\etc\hosts file (on Windows) to add an entry for server.tech.com pointing to 127.0.0.1.
+
+sudo vim /etc/hosts
+127.0.0.1   server.tech.com
+127.0.0.1   client.tech.com
+
+Once you've added the new entry, press Esc to exit Insert Mode.
+Type :wq (stands for "write" and "quit") and then press Enter to save the file and exit Vim.
+
+Flush the DNS cache
+sudo systemd-resolve --flush-caches
+
+Verify the DNS resolution
+ping server.tech.com
+
+Once done, you can send you curl request with — https://server.tech.com:8443/api/execute
+
+3. What if I want the certificate to recognize both server.tech.com and localhost. I brought up this scenario because in real world we do want the certificates to support multiple domain names and don’t want the hostname verification to fail. For this scenario we provide the alternative DNS entries during the CSR and certificate generation.
+
+
+For this, first you create a servercsr configuration file by providing the SSL config (servercsr.conf) —
+
+[ req ]
+default_bits       = 2048
+distinguished_name = req_distinguished_name
+req_extensions     = req_ext
+prompt             = no
+
+[ req_distinguished_name ]
+C  = US
+ST = California
+L  = San Francisco
+O  = MyCompany
+OU = IT
+CN = server.tech.com
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = server.tech.com
+DNS.2 = localhost
+Now we regenerate the CSR, certificate and the keystore files —
+
+# Generate server certificate signing request (CSR) using servercsr.conf
+openssl req -new -key server-private.key -out server.csr -config servercsr.conf
+
+# Generate server certificate by signing that with CA certificate and CA key and using servercsr.conf
+openssl x509 -req -days 365 -in server.csr -CA ca-public.crt -CAkey ca-private.key -CAcreateserial -out server.crt -extensions req_ext -extfile servercsr.conf
+
+# Create server keystore, here also we'll use CA cert to ensure "root" certificate chain is present
+openssl pkcs12 -export -in server.crt -inkey server-private.key -out server-keystore.p12 -name server -CAfile ca-public.crt -caname root -chain
+
+The request goes file and you can see that hostname “localhost” was matched with the “subjectAltName”
+
+With this approach you can always add more domains supported by the same server certificate for real world use cases.
+
+This same step will be needed with client certificate and keystore as well when you plan to use them in the client application.
+
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig  {
+
+    @Bean
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+            .requiresChannel().anyRequest().requiresSecure(); // Enforce HTTPS for all requests;
+    }
+    // Other configurations...
+}
+
+
+
+
+
+
