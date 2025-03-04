@@ -1,0 +1,258 @@
+link_expiry < NOW()
+This condition checks if the link_expiry timestamp is before the current date and time.
+It means that the link (or token, etc.) has expired or is past its expiration time.
+Use case:
+    This is typically used when you want to identify records where the expiration time has already passed.
+You can use this to:
+    Update the status of expired records.
+    Filter out expired links or tokens from a query result.
+import java.time.Instant;
+if (customer.getLinkExpiry().isBefore(Instant.now())) {
+    System.out.println("The link has expired.");
+}
+
+
+link_expiry > NOW()
+This condition checks if the link_expiry timestamp is after the current date and time.
+It means that the link (or token, etc.) is still valid or has not yet expired.
+Use case:
+    This is typically used when you want to identify records where the expiration time is in the future.
+You can use this to:
+    Update or filter valid links that have not expired yet.
+    Perform actions on links that are still valid.
+import java.time.Instant;
+if (customer.getLinkExpiry().isAfter(Instant.now())) {
+    System.out.println("The link is still valid.");
+}
+
+
+//	@ManyToOne(optional = false)
+//	@JsonIgnoreProperties("approval")
+//	@JoinColumn(name = "maker_id")
+//	private Users maker;
+
+//	@ManyToOne
+//	@JsonIgnoreProperties("approval")
+//	@JoinColumn(name = "checker_id")
+//	private Users checker;
+
+// @Column(name = "request_details")
+// private String requestDetails;
+
+// @Column(name = "error_details")
+// private String errorDetails;
+
+// @Column(name = "difference")
+// private String difference;
+
+// @Column(name = "status")
+// private Status status;
+
+isReadableAccess
+isWritableAccess
+
+ObjectMapper objectMapper = new ObjectMapper();
+objectMapper.configure(FAIL_ON_UNKNOWN_PROPERTIES, false);
+enum Status{
+ OPEN, REVIEW, APPROVED, REJECTED, EXECUTED;
+}
+
+    private String passwordResetToken;
+    private Instant resetTokenExpiration;
+    // mysql reset_token_expiration < NOW()
+    // vs
+    if (user.getResetTokenExpiration().isBefore(Instant.now())) {
+       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token expired");
+    }
+
+https://blog.stackademic.com/username-email-password-authentication-in-spring-security-5752aaf10652
+public UserEntity withResetToken(String passwordResetToken, Instant resetTokenAdditionalTime) {
+    this.passwordResetToken = passwordResetToken;
+    this.resetTokenExpiration = resetTokenAdditionalTime;
+    return this;
+}
+
+@RequestParam("token") String token,
+@RequestParam("newPassword") String newPassword,
+@RequestParam("confirmPassword") String confirmPassword
+if (!newPassword.equals(confirmPassword)) {
+        "Passwords do not match"
+}
+
+spring.mail.host=sandbox.smtp.mailtrap.io
+spring.mail.port=2525
+spring.mail.username=
+spring.mail.password=
+spring.mail.properties.mail.transport.protocol=smtp
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+spring.mail.properties.mail.smtp.starttls.required=true
+spring.mail.default-encoding=UTF-8
+
+spring.config.import=classpath:env.properties
+jwt.public.key=classpath:public.key
+jwt.private.key=classpath:private.key
+
+
+spring.mail.host=smtp-mail.outlook.com
+spring.mail.port=587
+spring.mail.username=outlookuserid@outlook.com
+spring.mail.password=xxxxxx
+spring.mail.properties.mail.protocol=smtp
+spring.mail.properties.mail.tls=true
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+spring.mail.properties.mail.smtp.ssl.trust=smtp-mail.outlook.com
+
+CREATE TABLE one_time_tokens (
+    token_value VARCHAR(255) PRIMARY KEY,
+    username VARCHAR(255) NOT NULL,
+    issued_at TIMESTAMP NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    used BOOLEAN NOT NULL
+);
+
+@Entity
+@Table(name = "one_time_tokens")
+public class OneTimeToken {
+    @Id
+    @GeneratedValue
+    private Long id;
+    private String tokenValue;
+    private String username;
+    private LocalDateTime createdAt;
+    private LocalDateTime expiresAt;
+    private boolean used;
+
+    // Getters and setters omitted for brevity
+}
+
+@Repository
+public interface OneTimeTokenRepository extends JpaRepository<OneTimeToken, Long> {
+    Optional<OneTimeToken> findByTokenValueAndUsedFalse(String tokenValue);
+    void deleteByExpiresAtBefore(LocalDateTime dateTime);
+}
+private static final int TOKEN_VALIDITY_MINUTES = 15;
+String tokenValue = UUID.randomUUID().toString();
+LocalDateTime now = LocalDateTime.now();
+
+OneTimeToken token = new OneTimeToken();
+token.setTokenValue(tokenValue);
+token.setUsername(request.getUsername());
+token.setCreatedAt(now);
+token.setExpiresAt(now.plusMinutes(TOKEN_VALIDITY_MINUTES));
+token.setUsed(false);
+tokenRepository.save(token);
+
+
+
+OneTimeToken token = tokenRepository.findByTokenValueAndUsedFalse(request.getTokenValue())
+       .orElseThrow(() -> new BadCredentialsException("Invalid or expired token"));
+if (token.getExpiresAt().isBefore(LocalDateTime.now())) {
+	throw new BadCredentialsException("Token has expired");
+}
+token.setUsed(true);
+tokenRepository.save(token);
+
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-mail</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-thymeleaf</artifactId>
+</dependency>
+next create a html file inside src/resource folder and file name →
+
+send-email.html
+
+
+<!DOCTYPE html>
+<html xmlns:th="www.thymeleaf.org" >
+<head>
+<meta charset="ISO-8859-1">
+<title>Insert title here</title>
+</head>
+<body>
+
+<h1 th:text="${subject}"></h1>
+<p th:text="${message}"></p>
+
+
+</body>
+</html>
+in service layer create one another method for format your text
+
+package com.bestprogrammer.services;
+
+import javax.mail.MessagingException;
+import javax.mail.internet.MimeMessage;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.stereotype.Service;
+import org.thymeleaf.TemplateEngine;
+import org.thymeleaf.context.Context;
+
+@Service
+public class EmailService {
+
+ @Autowired
+ private JavaMailSender javaMailSender;
+
+ @Autowired
+    private TemplateEngine templateEngine;
+
+ public void sendEmail(String to, String subject, String text) {
+  // TODO Auto-generated method stub
+  SimpleMailMessage message=new SimpleMailMessage();
+  message.setTo(to);
+  message.setSubject(subject);
+  message.setText(text);
+
+  javaMailSender.send(message);
+ }
+ // Text format method you can call from controller
+  public void sendHtmlEmail(String to, String subject, String message) throws MessagingException {
+         MimeMessage mimeMessage = javaMailSender.createMimeMessage();
+         MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+
+         Context context = new Context();
+         context.setVariable("subject", subject);
+         context.setVariable("message", message);
+         String htmlBody = templateEngine.process("sending-email", context);// pass your html filename my file name is sending-email.html so i have passed sending-email
+
+         helper.setTo(to);
+         helper.setSubject(subject);
+         helper.setText(htmlBody, true);
+
+         javaMailSender.send(mimeMessage);
+     }
+
+}
+and then call this method from endpoint
+
+package com.bestprogrammer.controller;
+import jakarta.mail.MessagingException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.bestprogrammer.services.EmailService;
+
+@RestController
+public class EmailController {
+
+    @Autowired
+    private EmailService emailService;
+
+    @GetMapping("/send-email")
+    public String sendSimpleEmail(@RequestParam String to, @RequestParam String subject, @RequestParam String text) throws MailException {
+  // emailService.sendEmail(to, subject, text);  // this is non format text
+   emailService.sendHtmlEmail(to, subject, text);// this is format text
+        return "Email sent successfully";
+    }
+}

@@ -1,0 +1,307 @@
+https://www.czetsuyatech.com/2023/03/spring-mutual-tls-hands-on.html
+// version 5.0
+try {
+    final SSLContext sslcontext = SSLContexts.custom()
+            .loadTrustMaterial(null, new TrustAllStrategy())
+            .build();
+    final SSLConnectionSocketFactory sslSocketFactory = SSLConnectionSocketFactoryBuilder.create()
+            .setSslContext(sslcontext)
+            .build();
+    final HttpClientConnectionManager cm = PoolingHttpClientConnectionManagerBuilder.create()
+            .setSSLSocketFactory(sslSocketFactory)
+            .build();
+    return HttpClients.custom()
+            .setConnectionManager(cm)
+            .evictExpiredConnections()
+            .build();
+
+} catch (NoSuchAlgorithmException | KeyStoreException | KeyManagementException e) {
+    logger.error(e.getMessage());
+}
+
+<dependency>
+    <groupId>org.apache.httpcomponents.client5</groupId>
+    <artifactId>httpclient5</artifactId>
+    <version>5.2</version> <!-- Use the latest stable version -->
+</dependency>
+<dependency>
+    <groupId>org.apache.httpcomponents.core5</groupId>
+    <artifactId>httpcore5</artifactId>
+    <version>5.2</version> <!-- Use the latest stable version -->
+</dependency>
+
+import java.security.KeyManagementException;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.X509Certificate;
+import javax.net.ssl.SSLContext;
+
+
+
+
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
+import org.apache.hc.client5.http.socket.ConnectionSocketFactory;
+import org.apache.hc.client5.http.socket.PlainConnectionSocketFactory;
+import org.apache.hc.client5.http.ssl.NoopHostnameVerifier;
+import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactory;
+import org.apache.hc.core5.http.config.Registry;
+import org.apache.hc.core5.http.config.RegistryBuilder;
+import org.apache.hc.core5.ssl.SSLContextBuilder;
+import org.apache.hc.core5.util.TimeValue;
+import org.springframework.web.client.RestTemplate;
+public RestTemplate getRestTemplate() throws KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
+// Create an SSL context that bypasses certificate validation
+
+        RestTemplateBuilder builder = new RestTemplateBuilder();
+
+        // Create an SSLContext that bypasses SSL validation
+        SSLContext sslContext = SSLContextBuilder.create()
+                .loadTrustMaterial((X509Certificate[] chain, String authType) -> true) // Trust all certificates
+                .build();
+
+        // Create SSLConnectionSocketFactory with the SSLContext and NoopHostnameVerifier
+        SSLConnectionSocketFactory sslSocketFactory = new SSLConnectionSocketFactory(
+                sslContext, NoopHostnameVerifier.INSTANCE);
+
+        // Create a registry of custom connection socket factories for both HTTP and HTTPS
+        Registry<ConnectionSocketFactory> socketFactoryRegistry = RegistryBuilder.<ConnectionSocketFactory>create()
+                .register("http", PlainConnectionSocketFactory.INSTANCE)
+                .register("https", sslSocketFactory)
+                .build();
+
+        // Create a connection manager using the custom registry
+        PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager(socketFactoryRegistry);
+        connectionManager.setMaxTotal(100);  // Set max total connections
+        connectionManager.setDefaultMaxPerRoute(20);  // Set max connections per route
+        connectionManager.setValidateAfterInactivity(TimeValue.ofSeconds(30));  // Validate connections after 30 seconds of inactivity
+
+        // Create the CloseableHttpClient with the custom connection manager
+        CloseableHttpClient httpClient = HttpClients.custom()
+                .setConnectionManager(connectionManager)
+                .evictIdleConnections(TimeValue.ofMinutes(5))  // Evict idle connections after 5 minutes
+                .build();
+
+        // Use HttpComponentsClientHttpRequestFactory to integrate the custom HttpClient with RestTemplate
+        HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(httpClient);
+
+        // Build the RestTemplate using the custom request factory
+        return builder
+                .requestFactory(() -> factory)
+                .build();
+}
+https://medium.com/@niral22/2-way-ssl-with-spring-boot-microservices-2c97c974e83
+
+@Test
+void givenAcceptingAllCertificates_whenHttpsUrlIsConsumed_thenOk() throws GeneralSecurityException {
+
+    final TrustStrategy acceptingTrustStrategy = (cert, authType) -> true;
+    final SSLContext sslContext = SSLContexts.custom()
+        .loadTrustMaterial(null, acceptingTrustStrategy)
+        .build();
+    final SSLConnectionSocketFactory sslsf = new SSLConnectionSocketFactory(sslContext, NoopHostnameVerifier.INSTANCE);
+    final Registry<ConnectionSocketFactory> socketFactoryRegistry = RegistryBuilder.<ConnectionSocketFactory> create()
+        .register("https", sslsf)
+        .register("http", new PlainConnectionSocketFactory())
+        .build();
+
+    final BasicHttpClientConnectionManager connectionManager =
+        new BasicHttpClientConnectionManager(socketFactoryRegistry);
+    final CloseableHttpClient httpClient = HttpClients.custom()
+        .setConnectionManager(connectionManager)
+        .build();
+
+    final HttpComponentsClientHttpRequestFactory requestFactory =
+        new HttpComponentsClientHttpRequestFactory(httpClient);
+    final ResponseEntity<String> response = new RestTemplate(requestFactory)
+        .exchange(urlOverHttps, HttpMethod.GET, null, String.class);
+    assertThat(response.getStatusCode()
+        .value(), equalTo(200));
+}
+
+https://www.cnblogs.com/milton/p/17017446.html
+
+JsonNode responseData = client.execute(httpPost, response -> {
+  if (response.getCode() >= 300) {
+      throw new ClientProtocolException(new StatusLine(response).toString());
+  }
+  final HttpEntity responseEntity = response.getEntity();
+  if (responseEntity == null) {
+      return null;
+  }
+  try (InputStream inputStream = responseEntity.getContent()) {
+      return objectMapper.readTree(inputStream);
+  }
+});
+System.out.println(responseData);
+
+
+<dependency>
+    <groupId>org.apache.httpcomponents.client5</groupId>
+    <artifactId>httpclient5</artifactId>
+    <version>5.4.1</version>
+</dependency>
+
+https://tychejin.tistory.com/467
+https://moonsiri.tistory.com/202
+https://www.cnblogs.com/milton/p/17017446.html
+https://codingnconcepts.com/spring-boot/feign-apachehttp5-ssl-proxy-connection/
+https://www.czetsuyatech.com/2023/03/spring-mutual-tls-hands-on.html
+
+
+com.fasterxml.jackson.dataformat:jackson-dataformat-csv:2.2.3
+com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.9.7
+https://utamaro.hatenablog.jp/entry/2018/10/20/094755
+// manually create by adding columns in order:
+CsvSchema schema = CsvSchema.builder()
+  .addColumn("name")
+  .addColumn("age")
+  .addColumn("validated")
+  .build();
+// or read from POJO
+@JsonPropertyOrder({ "name", "age", "validated" }) // important!
+// without annotation properties ordered alphabetically
+public class Person {
+ @JsonProperty("name")
+  public String name;
+  @JsonProperty("age")
+  public int age;
+  @JsonProperty("validated")
+  public boolean validated;
+public Person(String n, int a, boolean v) {
+    name = n;
+    age = a;
+    validated = v;
+  }
+}
+CsvSchema altSchema = CSV_MAPPER.schemaFor(Person.class)
+BeanUtils.copyProperties(shohin, shohincsv);
+if (!ObjectUtils.isEmpty(shohin.getBiztypeCdObj())) {}
+
+https://zenn.dev/kazpgm/books/ee2077af3be831/viewer/234e88
+import com.fasterxml.jackson.databind.MappingIterator;
+import com.fasterxml.jackson.databind.ObjectReader;
+import com.fasterxml.jackson.dataformat.csv.CsvMapper;
+import com.fasterxml.jackson.dataformat.csv.CsvSchema;
+
+public class CsvUtils {
+    
+    public static <T> List<T> readUtf8(Class<T> clazz, InputStream stream) throws IOException {
+        CsvMapper mapper = new CsvMapper(); 
+        CsvSchema schema = mapper.schemaFor(clazz).withHeader().withColumnReordering(true);
+        ObjectReader reader = mapper.readerFor(clazz).with(schema);
+        return reader.<T>readValues(stream).readAll();
+    }
+    
+    public static <T> List<T> readSjis(Class<T> clazz, InputStream stream) throws IOException {
+        StringBuilder lines = new StringBuilder(); 
+        String lineSeparator = System.getProperty("line.separator"); 
+        try(BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "Shift-JIS"))) { 
+            for (String r = reader.readLine(); r != null; r = reader.readLine()) { 
+                lines.append(r).append(lineSeparator); 
+            } 
+        }
+        CsvMapper mapper = new CsvMapper(); 
+		 mapper.configure(Feature.ALWAYS_QUOTE_STRINGS, true);
+		 mapper.setDateFormat(new SimpleDateFormat("yyyy/MM/dd HH:mm:ss"));
+        CsvSchema schema = mapper 
+          .schemaFor(clazz) 
+          .withHeader().withColumnReordering(true); 
+		  //mapper.writer(schema).writeValueAsString(shohinCsvList);
+        ObjectReader reader = mapper.readerFor(clazz).with(schema);
+        MappingIterator<T> out = reader.readValues(lines.toString()); 
+        return out.readAll();
+    }
+
+}
+
+https://cowtowncoder.medium.com/writing-csv-with-jackson-204fdb3c9dac
+
+
+@Bean
+public RestTemplate restTemplate() throws Exception {
+ 
+  char[] password = "ca_pass_123".toCharArray();
+ 
+  SSLContext sslContext = SSLContextBuilder.create()
+      .loadKeyMaterial(keyStore("classpath:truststore.p12", password), password)
+      .loadTrustMaterial(null, new TrustSelfSignedStrategy()).build();
+ 
+  final SSLConnectionSocketFactory sslSocketFactory = SSLConnectionSocketFactoryBuilder.create()
+      .setSslContext(sslContext)
+      .build();
+ 
+  final HttpClientConnectionManager cm = PoolingHttpClientConnectionManagerBuilder.create()
+      .setSSLSocketFactory(sslSocketFactory)
+      .setDefaultTlsConfig(TlsConfig.custom()
+          .setHandshakeTimeout(Timeout.ofSeconds(30))
+          .setSupportedProtocols(TLS.V_1_3)
+          .build())
+      .build();
+ 
+  CloseableHttpClient httpClient = HttpClients.custom()
+      .setConnectionManager(cm)
+      .build();
+ 
+  HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(httpClient);
+ 
+  return new RestTemplate(factory);
+}
+ 
+private KeyStore keyStore(String file, char[] password) throws Exception {
+ 
+  KeyStore keyStore = KeyStore.getInstance(KEY_TYPE);
+  File key = ResourceUtils.getFile(file);
+  try (InputStream in = new FileInputStream(key)) {
+    keyStore.load(in, password);
+  }
+ 
+  return keyStore;
+}
+@Data
+public class CurrentUser {
+  private String username;
+  private Set<String> permissions;
+}
+public class UserThreadLocalHolder {
+  private UserThreadLocalHolder() { }
+  private static ThreadLocal<CurrentUser> threadLocal = new ThreadLocal<>();
+
+  public static void set(CurrentUser currentUser) {
+    threadLocal.set(currentUser);
+  }
+
+  public static CurrentUser get() {
+    return threadLocal.get();
+  }
+
+  public static void remove() {
+    threadLocal.remove();
+  }
+}
+
+// Filter chain for session-based web UI
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {}
+// Filter chain for JWT-based API
+    @Bean
+    public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {}
+
+https://medium.com/@AlexanderObregon/the-mechanics-behind-task-scheduling-in-spring-boot-f3b4ae3c0db8
+Second: A value between 0 and 59.
+Minute: A value between 0 and 59.
+Hour: A value between 0 and 23.
+Day-of-Month: A value between 1 and 31, with support for special characters like ? (no specific value) and L (last day of the month).
+Month: A value between 1 (January) and 12 (December), with optional shorthand names such as JAN.
+Day-of-Week: A value between 0–6 (0 = Sunday, 6 = Saturday), and Spring also recognizes 7 as Sunday. You can also use optional shorthand names like MON.
+Special characters such as *, /, -, and , add flexibility:
+
+* matches any value for the field.
+/ specifies increments, e.g., 0/5 means every 5 units starting from 0.
+- defines ranges, e.g., 10-15 represents values 10 through 15.
+, allows for multiple values, e.g., MON,WED,FRI.
+
+https://medium.com/@2015-2-60-004/dynamic-scheduling-in-spring-boot-with-quartz-a-practical-approach-6c6408a99b39
+
+https://www.hungrycoders.com/blog/understanding-relaxed-binding-in-spring-boot#:~:text=Spring%20Boot's%20relaxed%20binding%20converts,snake_case%3A%20my_property_name

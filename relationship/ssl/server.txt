@@ -1,0 +1,28 @@
+Server Certificate - Private Key
+$ openssl genrsa -aes256 -out server.key 2048
+
+Request for a CSR
+$ openssl req -new -sha256 -key server.key -out server.csr
+	Country Name=PH
+	State/Province=Laguna
+	Locality=Filipino
+	Organization Name=Czetsuya Tech
+	Organizational Unit=IT
+	Common Name=localhost
+	Email Address=czetsuya@gmail.com
+	It will ask for the server's password; use the default one. It will also ask for a challenge password and an optional company name that you can leave blank.
+	
+Sign the Server Certificate
+$ openssl x509 -req -in server.csr -CA rootCA.pem -CAkey rootCA.key -CAcreateserial -out server.pem -days 365 -sha256
+	
+$ openssl pkcs12 -export -in server.pem -out server.p12 -name server -nodes -inkey server.key
+
+Create the Truststore
+Import the CA Certificate into a PKCS#12 Truststore
+server can rely on the CA’s verification of clients.
+using a CA is the standard practice for systems handling multiple clients.
+While there may be scenarios where trusting individual certificates is necessary, such as in a one-client setup
+$ keytool -import -file rootCA.pem -alias rootCA -keystore truststore.p12 -storetype PKCS12
+
+	client-auth : NEED/WANT/NONE
+NEED means that the server must verify the client certificate, while WANT also requires a client certificate, but it will maintain the connection if no verification is provided. When NONE is used, no client certificate is required. 	

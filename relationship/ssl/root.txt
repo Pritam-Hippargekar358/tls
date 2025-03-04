@@ -1,0 +1,243 @@
+Root Certificate - Private Key
+$ openssl genrsa -aes256 -out rootCA.key 2048
+This command will generate a private key for the root certificate and will ask you to enter a password as the password for the private key. 
+
+Root Certificate - Public Key()
+Request a public certificate from the root certificate that we have just created.
+$ openssl req -new -x509 -nodes -key rootCA.key -sha256 -days 365 -out rootCA.pem
+    Country Name=PH
+	State/Province=Laguna
+	Locality=Filipino
+	Organization Name=Czetsuya Tech
+	Organizational Unit=IT
+	Common Name=localhost
+	Email Address=czetsuya@gmail.com
+	CN=localhost should be replaced when creating certificates for different environments. It should match the domain name.
+	
+	
+
+
+-ext san=ip:127.0.0.1,dns:localhost
+We use the keytool -ext option to set the Subject Alternative Names (SAN) to define the local hostname/IP address that identifies the server. 
+
+keytool -genkeypair -alias server -keyalg RSA -keysize 4096 -validity 365 -dname "CN=Server,OU=Server,O=Examples,L=,S=CA,C=U" -keypass changeit -keystore server.p12 -storeType PKCS12 -storepass changeit
+
+keytool -genkeypair -alias client -keyalg RSA -keysize 4096 -validity 365 -dname "CN=Client,OU=Client,O=Examples,L=,S=CA,C=U" -keypass changeit -keystore client.p12 -storeType PKCS12 -storepass changeit
+
+// export public keys
+keytool -exportcert -alias client -file client.cer -keystore client.p12 -storepass changeit
+keytool -exportcert -alias server -file server.cer -keystore server.p12 -storepass changeit
+
+//import public keys to trust stores.
+keytool -importcert -keystore client-truststore.p12 -alias server-public -file server.cer -storepass changeit -noprompt
+keytool -importcert -keystore server-truststore.p12 -alias client-public -file client.cer -storepass 
+changeit -noprompt	
+
+
+@Configuration
+public class RestClientConfig {
+
+    private static final String PKCS12_FILE_PATH = "your_path_to_client_certificate\\badssl.com-client.p12";
+    private static final String PKCS12_PASSWORD = "badssl.com";
+    private static final String TRUSTSTORE_FILE_PATH = "your_path_to_server_certificate\\truststore.jks";
+    private static final String TRUSTSTORE_PASSWORD = "your_password";
+
+    @Bean
+    public RestTemplate restTemplate() {
+        SSLContext sslContext = configureSSLContext();
+        return new RestTemplate(createRequestFactory(sslContext));
+    }
+
+    private SSLContext configureSSLContext() {
+        try {
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+
+            KeyStore keyStore = KeyStore.getInstance("PKCS12");
+            char[] keyStorePassword = PKCS12_PASSWORD.toCharArray();
+            keyStore.load(new FileInputStream(PKCS12_FILE_PATH), keyStorePassword);
+
+            KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            keyManagerFactory.init(keyStore, keyStorePassword);
+
+            KeyStore trustStore = KeyStore.getInstance("JKS");
+            char[] trustStorePassword = TRUSTSTORE_PASSWORD.toCharArray();
+            trustStore.load(new FileInputStream(TRUSTSTORE_FILE_PATH), trustStorePassword);
+
+            TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            trustManagerFactory.init(trustStore);
+
+            sslContext.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), null);
+
+            return sslContext;
+        } catch (NoSuchAlgorithmException | KeyStoreException | CertificateException | IOException | UnrecoverableKeyException | KeyManagementException e) {
+            throw new RuntimeException("Error configuring SSLContext", e);
+        }
+    }
+
+    private ClientHttpRequestFactory createRequestFactory(SSLContext sslContext) {
+        return new CustomRequestFactory(sslContext);
+    }
+
+    private static class CustomRequestFactory extends SimpleClientHttpRequestFactory {
+
+        private final SSLContext sslContext;
+
+        public CustomRequestFactory(SSLContext sslContext) {
+            this.sslContext = sslContext;
+        }
+
+        @Override
+        protected void prepareConnection(java.net.HttpURLConnection connection, String httpMethod) throws IOException {
+            if (connection instanceof javax.net.ssl.HttpsURLConnection) {
+                ((javax.net.ssl.HttpsURLConnection) connection).setSSLSocketFactory(sslContext.getSocketFactory());
+            }
+            super.prepareConnection(connection, httpMethod);
+        }
+    }
+}
+
+
+@Configuration
+public class ServiceRegistryConfig {
+
+  @Value("${server.base-url}")
+  private String baseUrl;
+
+  @Value("${server.endpoint}")
+  private String endpoint;
+
+  @Bean
+  public WebClient configureWebclient(@Value("${server.ssl.trust-store}") String trustStorePath,
+      @Value("${server.ssl.trust-store-password}") String trustStorePass,
+      @Value("${server.ssl.key-store}") String keyStorePath,
+      @Value("${server.ssl.key-store-password}") String keyStorePass,
+      @Value("${server.ssl.key-alias}") String keyAlias) {
+
+    SslContext sslContext;
+
+    final PrivateKey privateKey;
+
+    final X509Certificate[] certificates;
+
+    try {
+      final KeyStore trustStore;
+
+      final KeyStore keyStore;
+
+      trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
+
+      trustStore.load(new FileInputStream(ResourceUtils.getFile(trustStorePath)), trustStorePass.toCharArray());
+
+      keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+
+      keyStore.load(new FileInputStream(ResourceUtils.getFile(keyStorePath)), keyStorePass.toCharArray());
+
+      List<Certificate> certificateList =
+          Collections.list(trustStore.aliases()).stream()
+              .filter(
+                  t -> {
+                    try {
+                      return trustStore.isCertificateEntry(t);
+                    } catch (KeyStoreException exception) {
+                      throw new RuntimeException("Error reading truststore", exception);
+                    }
+                  })
+              .map(
+                  t -> {
+                    try {
+                      return trustStore.getCertificate(t);
+                    } catch (KeyStoreException exception) {
+                      throw new RuntimeException("Error reading truststore", exception);
+                    }
+                  })
+              .collect(Collectors.toList());
+
+      certificates = certificateList.toArray(new X509Certificate[certificateList.size()]);
+
+      privateKey = (PrivateKey) keyStore.getKey(keyAlias, keyStorePass.toCharArray());
+
+      Certificate[] certChain = keyStore.getCertificateChain(keyAlias);
+
+      X509Certificate[] x509CertificateChain =
+          Arrays.stream(certChain)
+              .map(certificate -> (X509Certificate) certificate)
+              .collect(Collectors.toList())
+              .toArray(new X509Certificate[certChain.length]);
+
+      X509Certificate certificate = x509CertificateChain[0];
+
+      validateCertificate(certificate);
+
+      sslContext =
+          SslContextBuilder.forClient()
+              .keyManager(privateKey, keyStorePass, x509CertificateChain)
+              .trustManager(certificates)
+              .build();
+
+      HttpClient httpClient =
+          HttpClient.create().secure(sslContextSpec -> sslContextSpec.sslContext(sslContext));
+
+      return webClientConfiguration(httpClient);
+
+    } catch (KeyStoreException
+        | CertificateException
+        | NoSuchAlgorithmException
+        | IOException
+        | UnrecoverableKeyException e) {
+
+      throw new RuntimeException(e);
+    }
+
+  }
+
+  private boolean validateCertificate(X509Certificate certificate) {
+
+    var certificateExpirationDate =
+        certificate.getNotAfter().toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+
+    var certificateStartDate =
+        certificate.getNotBefore().toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+
+    if (LocalDate.now().isAfter(certificateExpirationDate)) {
+
+      throw new ServiceExpirationDateException("Service date expiration");
+    }
+
+    if (LocalDate.now().isBefore(certificateStartDate)) {
+
+      throw new ServiceStartDateException(
+          "Service cannot be used until " + certificateStartDate.toString());
+    }
+
+    var subject =
+        Arrays.stream(certificate.getSubjectDN().getName().split(","))
+            .map(i -> i.split("="))
+            .collect(Collectors.toMap(element -> element[0].trim(), element -> element[1].trim()));
+
+    if (!subject.get("O").equalsIgnoreCase("Refactorizando")) {
+
+      throw new OrganizationNameException("Organization is not correct");
+    }
+
+    return true;
+  }
+
+  private WebClient webClientConfiguration(HttpClient httpClient) {
+
+    ClientHttpConnector connector = new ReactorClientHttpConnector(httpClient);
+
+    var webClient =
+        WebClient.builder()
+            .clientConnector(connector)
+            .baseUrl(baseUrl)
+            .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+            .build();
+
+    var reponse =
+        webClient.get().uri(endpoint).retrieve().bodyToMono(String.class).block();
+
+    assert Objects.requireNonNull(reponse).equalsIgnoreCase("verified");
+
+    return webClient;
+  }
+}
